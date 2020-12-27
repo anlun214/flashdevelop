@@ -44,7 +44,8 @@ namespace PluginCore
         Keys = 8589934592, // KeyEvent (keys)
         Completion = 17179869184, // NotifyEvent
         AppChanges = 34359738368, // NotifyEvent
-        ApplyTheme = 68719476736 // NotifyEvent
+        ApplyTheme = 68719476736, // NotifyEvent
+        FolderOpen = 137438953472 // TextEvent (path)
     }
 
     public enum UpdateInterval
@@ -52,6 +53,12 @@ namespace PluginCore
         Never = -1,
         Monthly = 0,
         Weekly = 1
+    }
+
+    public enum UpdateType
+    {
+        StableRelease = 0,
+        PreviewRelease = 1,
     }
 
     public enum SessionType
@@ -108,5 +115,4 @@ namespace PluginCore
         UTF8 = 65001,
         UTF7 = 65000
     }
-
 }

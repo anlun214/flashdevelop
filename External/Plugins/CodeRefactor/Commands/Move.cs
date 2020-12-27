@@ -34,16 +34,16 @@ using ScintillaNet;
  */
 namespace CodeRefactor.Commands
 {
-    class Move : RefactorCommand<IDictionary<string, List<SearchMatch>>>
+    internal class Move : RefactorCommand<IDictionary<string, List<SearchMatch>>>
     {
         public Dictionary<string, string> OldPathToNewPath;
-        private readonly bool renaming;
-        private readonly bool updatePackages;
-        private List<MoveTargetHelper> targets;
-        private List<string> filesToReopen;
-        private int currentTargetIndex;
-        private ASResult currentTargetResult;
-        private bool targetsOutsideClasspath;
+        readonly bool renaming;
+        readonly bool updatePackages;
+        List<MoveTargetHelper> targets;
+        List<string> filesToReopen;
+        int currentTargetIndex;
+        ASResult currentTargetResult;
+        bool targetsOutsideClasspath;
 
         #region Constructors
 
@@ -159,12 +159,12 @@ namespace CodeRefactor.Commands
 
         #region Private Helper Methods
 
-        private void CreateListOfMoveTargets()
+        void CreateListOfMoveTargets()
         {
             targets = new List<MoveTargetHelper>();
             filesToReopen = new List<string>();
             var project = PluginBase.CurrentProject;
-            if (project == null) return;
+            if (project is null) return;
             var filterMask = project.DefaultSearchFilter;
             foreach (var item in OldPathToNewPath)
             {
@@ -173,9 +173,7 @@ namespace CodeRefactor.Commands
                 if (File.Exists(oldPath))
                 {
                     newPath = Path.Combine(newPath, Path.GetFileName(oldPath));
-
-                    ITabbedDocument doc;
-                    if (AssociatedDocumentHelper.InitiallyOpenedFiles.TryGetValue(oldPath, out doc))
+                    if (AssociatedDocumentHelper.InitiallyOpenedFiles.TryGetValue(oldPath, out var doc))
                     {
                         doc.Save();
                         doc.Close();
@@ -198,7 +196,7 @@ namespace CodeRefactor.Commands
                     if (FileHelper.FileMatchesSearchFilter(oldPath, filterMask))
                     {
                         var target = GetMoveTarget(oldPath, newPath, null);
-                        if (target == null) continue;
+                        if (target is null) continue;
                         targets.Add(target);
                     }
                 }
@@ -213,15 +211,15 @@ namespace CodeRefactor.Commands
                         foreach (string oldFilePath in Directory.GetFiles(oldPath, mask, SearchOption.AllDirectories))
                         {
                             var target = GetMoveTarget(oldFilePath, oldFilePath.Replace(oldPath, newPath), oldPath);
-                            // If target == null there's no chance of the others being valid, actually, neither on the outer loop
-                            if (target == null) break;
+                            // If target is null there's no chance of the others being valid, actually, neither on the outer loop
+                            if (target is null) break;
                             targets.Add(target);
                         }
                 }
             }
         }
 
-        private MoveTargetHelper GetMoveTarget(string oldFilePath, string newPath, string ownerPath)
+        MoveTargetHelper GetMoveTarget(string oldFilePath, string newPath, string ownerPath)
         {
             MoveTargetHelper result = new MoveTargetHelper();
             result.OldFilePath = oldFilePath;
@@ -266,7 +264,7 @@ namespace CodeRefactor.Commands
             return result;
         }
 
-        private void CopyTargets()
+        void CopyTargets()
         {
             MessageBar.Locked = true;
             foreach (var target in targets)
@@ -295,7 +293,7 @@ namespace CodeRefactor.Commands
             MessageBar.Locked = false;
         }
 
-        private void MoveTargets()
+        void MoveTargets()
         {
             MessageBar.Locked = true;
             foreach (var item in OldPathToNewPath)
@@ -334,7 +332,7 @@ namespace CodeRefactor.Commands
             MessageBar.Locked = false;
         }
 
-        private void CloseDocuments(string oldDirectory, string newDirectory)
+        void CloseDocuments(string oldDirectory, string newDirectory)
         {
             string oldPath = oldDirectory.Contains(Path.DirectorySeparatorChar.ToString())
                                  ? oldDirectory + Path.DirectorySeparatorChar
@@ -366,7 +364,7 @@ namespace CodeRefactor.Commands
             foreach (var file in fileMatches) AssociatedDocumentHelper.InitiallyOpenedFiles.Remove(file);
         }
 
-        private void UpdateReferencesNextTarget()
+        void UpdateReferencesNextTarget()
         {
             if (currentTargetIndex < targets.Count)
             {
@@ -438,7 +436,7 @@ namespace CodeRefactor.Commands
             }
         }
 
-        private void MoveRefactoredFiles()
+        void MoveRefactoredFiles()
         {
             MessageBar.Locked = true;
             AssociatedDocumentHelper.CloseTemporarilyOpenedDocuments();
@@ -446,7 +444,7 @@ namespace CodeRefactor.Commands
             {
                 File.Delete(target.OldFilePath);
 
-                if (target.OwnerPath == null)
+                if (target.OwnerPath is null)
                     OldPathToNewPath.Remove(target.OldFilePath);
 
                 // Casing changes, we cannot move directly here, there may be conflicts, better leave it to the next step
@@ -523,7 +521,7 @@ namespace CodeRefactor.Commands
             MessageBar.Locked = false;
         }
 
-        private void ReopenInitialFiles()
+        void ReopenInitialFiles()
         {
             foreach (string file in filesToReopen)
                 PluginBase.MainForm.OpenEditableDocument(file, false);
@@ -533,7 +531,7 @@ namespace CodeRefactor.Commands
 
         #region Event Handlers
 
-        private void FindFinished(FRResults results)
+        void FindFinished(FRResults results)
         {
             UserInterfaceManager.ProgressDialog.Show();
             UserInterfaceManager.ProgressDialog.SetTitle(TextHelper.GetString("Info.UpdatingReferences"));
@@ -543,9 +541,9 @@ namespace CodeRefactor.Commands
             string oldType = (currentTarget.OldFileModel.Package + "." + targetName).Trim('.');
             string newType = (currentTarget.NewPackage + "." + targetName).Trim('.');
 
-            foreach (KeyValuePair<string, List<SearchMatch>> entry in results)
+            foreach (var entry in results)
             {
-                List<SearchMatch> matches = entry.Value;
+                var matches = entry.Value;
                 if (matches.Count == 0 || entry.Key == currentTarget.OldFilePath || 
                     entry.Key == currentTarget.NewFilePath) continue;
                 string file = entry.Key;
@@ -559,7 +557,7 @@ namespace CodeRefactor.Commands
                     // we have to do it each time as the process of checking the declaration source can change the currently open file!
                     sci = AssociatedDocumentHelper.LoadDocument(file).SciControl;
                     // if the search result does point to the member source, store it
-                    if (RefactoringHelper.DoesMatchPointToTarget(sci, match, currentTargetResult, this.AssociatedDocumentHelper))
+                    if (RefactoringHelper.DoesMatchPointToTarget(sci, match, currentTargetResult, AssociatedDocumentHelper))
                         actualMatches.Add(match);
                 }
                 if (actualMatches.Count == 0) continue;
@@ -571,7 +569,7 @@ namespace CodeRefactor.Commands
                 // directory != currentTarget.OwnerPath -> renamed owner directory, so both files in the same place
                 bool needsImport = directory != Path.GetDirectoryName(currentTarget.NewFilePath)
                                    && directory != currentTarget.OwnerPath
-                                   && !ASContext.Context.CurrentModel.Imports.Contains(targetName, FlagType.Class & FlagType.Function & FlagType.Namespace, 0);
+                                   && !ASContext.Context.CurrentModel.Imports.Contains(targetName, FlagType.Class & FlagType.Function & FlagType.Namespace);
 
                 // Replace matches
                 int typeDiff = sci.MBSafeTextLength(oldType) - sci.MBSafeTextLength(targetName);

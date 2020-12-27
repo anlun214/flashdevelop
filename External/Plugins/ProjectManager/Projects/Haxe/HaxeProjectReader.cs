@@ -7,61 +7,62 @@ namespace ProjectManager.Projects.Haxe
 {
     public class HaxeProjectReader : ProjectReader
     {
-        HaxeProject project;
+        readonly HaxeProject project;
 
-        public HaxeProjectReader(string filename)
-            : base(filename, new HaxeProject(filename))
-        {
-            this.project = base.Project as HaxeProject;
-        }
+        public HaxeProjectReader(string filename) : base(filename, new HaxeProject(filename)) => project = Project as HaxeProject;
 
-        public new HaxeProject ReadProject()
-        {
-            return base.ReadProject() as HaxeProject;
-        }
+        public new HaxeProject ReadProject() => base.ReadProject() as HaxeProject;
 
         protected override void PostProcess()
         {
             var options = project.MovieOptions;
-
             if (version > 1)
             {
-                bool needSave = false;
-                // old projects fix
-                if (options.Platform == "NME" && project.TargetBuild == null
-                    && project.TestMovieCommand != "" && project.TestMovieBehavior != TestMovieBehavior.OpenDocument)
+                var needSave = false;
+                //TODO slavara: old projects fix
+                switch (options.Platform)
                 {
-                    project.TestMovieCommand = "";
-                    needSave = true;
-                }
-                if (options.Platform == "NME")
-                {
-                    options.Platform = GetBuilder(project.OutputPath);
-                    options.Version = "1.0";
-                    needSave = true;
-                }
-                if (options.Platform == null)
-                {
-                    options.Platform = PlatformData.FLASHPLAYER_PLATFORM;
-                    needSave = true;
+                    case "NME":
+                        if (project.TargetBuild is null
+                            && project.TestMovieCommand != ""
+                            && project.TestMovieBehavior != TestMovieBehavior.OpenDocument)
+                            project.TestMovieCommand = string.Empty;
+                        options.Platform = GetBuilder(project.OutputPath);
+                        options.Version = "1.0";
+                        needSave = true;
+                        break;
+                    case "Lime":
+                        if (project.TargetBuild is null)
+                        {
+                            project.TargetBuild = options.PlatformSupport.Targets[0];
+                            needSave = true;
+                        }
+                        break;
+                    case null:
+                        options.Platform = PlatformData.FLASHPLAYER_PLATFORM;
+                        needSave = true;
+                        break;
                 }
                 if (options.HasPlatformSupport)
                 {
-                    var platform = options.PlatformSupport;
-                    options.TargetBuildTypes = platform.Targets;
+                    options.TargetBuildTypes = options.PlatformSupport.Targets;
                     needSave = true;
                 }
                 if (needSave)
                 {
-                    try { project.Save(); }
+                    try
+                    {
+                        project.Save();
+                    }
                     catch { }
                 }
                 return;
             }
 
+            //TODO slavara: actualize for haxe 4.1.4
             if (options.MajorVersion > 10)
             {
-                // old projects fix
+                //TODO slavara: old projects fix
                 string platform = null;
                 switch (options.MajorVersion)
                 {
@@ -82,9 +83,10 @@ namespace ProjectManager.Projects.Haxe
                         options.MajorVersion = 0; 
                         break;
                 }
-                if (platform == null)
+                if (platform is null)
                 {
                     platform = PlatformData.FLASHPLAYER_PLATFORM;
+                    //TODO slavara: actualize for haxe 4.1.4
                     options.MajorVersion = 14;
                 }
                 options.Platform = platform;
@@ -95,15 +97,12 @@ namespace ProjectManager.Projects.Haxe
 
         static string GetBuilder(string projectFile)
         {
-            if (string.IsNullOrEmpty(projectFile))
-                return "Lime";
-            switch (Path.GetExtension(projectFile).ToLower())
+            if (string.IsNullOrEmpty(projectFile)) return "Lime";
+            return Path.GetExtension(projectFile).ToLower() switch
             {
-                case ".nmml":
-                    return "Nme";
-                default:
-                    return "Lime";
-            }
+                ".nmml" => "Nme",
+                _ => "Lime",
+            };
         }
 
         // process Haxe-specific stuff
@@ -120,8 +119,7 @@ namespace ProjectManager.Projects.Haxe
 
         public void ReadLibraries()
         {
-            List<string> libraries = new List<string>();
-
+            var libraries = new List<string>();
             ReadStartElement("haxelib");
             while (Name == "library")
             {
@@ -129,22 +127,19 @@ namespace ProjectManager.Projects.Haxe
                 Read();
             }
             ReadEndElement();
-
-            project.CompilerOptions.Libraries = new string[libraries.Count];
-            libraries.CopyTo(project.CompilerOptions.Libraries);
+            project.CompilerOptions.Libraries = libraries.ToArray();
         }
 
         public void ReadBuildOptions()
         {
-            HaxeOptions options = project.CompilerOptions;
-
+            var options = project.CompilerOptions;
             ReadStartElement("build");
             while (Name == "option")
             {
                 MoveToFirstAttribute();
                 switch (Name)
                 {
-                    case "directives": options.Directives = (Value=="") ? new string[]{} : Value.Split('\n'); break;
+                    case "directives": options.Directives = (Value=="") ? Array.Empty<string>() : Value.Split('\n'); break;
                     case "flashStrict": options.FlashStrict = BoolValue; break;
                     case "noInlineOnDebug": options.NoInlineOnDebug = BoolValue; break;
                     case "mainClass": options.MainClass = Value; break;
@@ -164,10 +159,9 @@ namespace ProjectManager.Projects.Haxe
                 string path = OSPath(GetAttribute("path"));
                 string mode = GetAttribute("mode");
 
-                if (path == null)
-                    throw new Exception("All library assets must have a 'path' attribute.");
+                if (path is null) throw new Exception("All library assets must have a 'path' attribute.");
 
-                LibraryAsset asset = new LibraryAsset(project, path);
+                var asset = new LibraryAsset(project, path);
                 project.LibraryAssets.Add(asset);
 
                 asset.ManualID = GetAttribute("id"); // could be null
@@ -181,7 +175,7 @@ namespace ProjectManager.Projects.Haxe
                     asset.Sharepoint = GetAttribute("sharepoint"); // could be null
 
                 if (asset.IsImage && GetAttribute("bitmap") != null)
-                    asset.BitmapLinkage = Boolean.Parse(GetAttribute("bitmap"));
+                    asset.BitmapLinkage = bool.Parse(GetAttribute("bitmap"));
 
                 Read();
             }

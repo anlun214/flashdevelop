@@ -1,5 +1,5 @@
 using System;
-using System.Collections;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -21,15 +21,13 @@ namespace ProjectManager.Controls.TreeView
 
     public class DirectoryNode : GenericNode
     {
-        static public event DirectoryNodeRefresh OnDirectoryNodeRefresh;
-        static public event DirectoryNodeMapping OnDirectoryNodeMapping;
+        public static event DirectoryNodeRefresh OnDirectoryNodeRefresh;
+        public static event DirectoryNodeMapping OnDirectoryNodeMapping;
 
         bool dirty;
-        DirectoryNode insideClasspath;
-        DirectoryNode insideLibrarypath;
 
-        public DirectoryNode InsideClasspath { get { return insideClasspath; } }
-        public DirectoryNode InsideLibrarypath { get { return insideLibrarypath; } }
+        public DirectoryNode InsideClasspath { get; private set; }
+        public DirectoryNode InsideLibrarypath { get; private set; }
 
         public DirectoryNode(string directory) : base(directory)
         {
@@ -53,35 +51,35 @@ namespace ProjectManager.Controls.TreeView
             base.Refresh(recursive);
 
             // item icon
-            if (Parent is DirectoryNode)
+            if (Parent is DirectoryNode node)
             {
-                insideClasspath = (Parent as DirectoryNode).insideClasspath;
-                insideLibrarypath = (Parent as DirectoryNode).insideLibrarypath;
+                InsideClasspath = node.InsideClasspath;
+                InsideLibrarypath = node.InsideLibrarypath;
             }
 
-            string colorId = "ProjectTreeView.ForeColor";
+            var colorId = "ProjectTreeView.ForeColor";
             if (project != null)
             {
-                if (project.IsPathHidden(BackingPath))
-                    ImageIndex = Icons.HiddenFolder.Index;
-                else if (insideClasspath == null && project.IsClassPath(BackingPath))
+                if (project.IsPathHidden(BackingPath)) ImageIndex = Icons.HiddenFolder.Index;
+                else if (InsideClasspath is null && project.IsClassPath(BackingPath))
                 {
-                    insideClasspath = this;
+                    InsideClasspath = this;
                     ImageIndex = Icons.ClasspathFolder.Index;
                 }
-                else if (insideClasspath != null && project.IsCompileTarget(BackingPath))
+                else if (InsideClasspath != null && project.IsCompileTarget(BackingPath))
                     ImageIndex = Icons.FolderCompile.Index;
-                else if (insideLibrarypath == null && project.IsLibraryAsset(BackingPath))
+                else if (InsideLibrarypath is null && project.IsLibraryAsset(BackingPath))
                 {
-                    LibraryAsset asset = project.GetAsset(BackingPath);
-                    if (asset.SwfMode == SwfAssetMode.ExternalLibrary)
-                        colorId = "ProjectTreeView.ExternalLibraryTextColor";
-                    else if (asset.SwfMode == SwfAssetMode.Library)
-                        colorId = "ProjectTreeView.LibraryTextColor";
-                    else if (asset.SwfMode == SwfAssetMode.IncludedLibrary)
-                        colorId = "ProjectTreeView.IncludedLibraryTextColor";
+                    var asset = project.GetAsset(BackingPath);
+                    colorId = asset.SwfMode switch
+                    {
+                        SwfAssetMode.ExternalLibrary => "ProjectTreeView.ExternalLibraryTextColor",
+                        SwfAssetMode.Library => "ProjectTreeView.LibraryTextColor",
+                        SwfAssetMode.IncludedLibrary => "ProjectTreeView.IncludedLibraryTextColor",
+                        _ => colorId
+                    };
 
-                    insideLibrarypath = this;
+                    InsideLibrarypath = this;
                     ImageIndex = Icons.LibrarypathFolder.Index;
                 }
                 else
@@ -91,10 +89,9 @@ namespace ProjectManager.Controls.TreeView
 
             SelectedImageIndex = ImageIndex;
 
-            Color textColor = PluginBase.MainForm.GetThemeColor(colorId);
+            var textColor = PluginBase.MainForm.GetThemeColor(colorId);
             if (colorId != "ProjectTreeView.ForeColor" && textColor == Color.Empty) textColor = SystemColors.Highlight;
-            if (textColor != Color.Empty) ForeColorRequest = textColor;
-            else ForeColorRequest = SystemColors.ControlText;
+            ForeColorRequest = textColor != Color.Empty ? textColor : SystemColors.ControlText;
 
             // make the plus/minus sign correct
             // TODO: Check if this works ok!
@@ -122,10 +119,10 @@ namespace ProjectManager.Controls.TreeView
             NotifyRefresh();
         }
 
-        virtual protected void NotifyRefresh()
+        protected virtual void NotifyRefresh()
         {
             // hook for plugins
-            if (OnDirectoryNodeRefresh != null) OnDirectoryNodeRefresh(this);
+            OnDirectoryNodeRefresh?.Invoke(this);
         }
 
         /// <summary>
@@ -136,7 +133,7 @@ namespace ProjectManager.Controls.TreeView
             if (dirty) PopulateChildNodes(false);
         }
 
-        private void PopulateChildNodes(bool recursive)
+        void PopulateChildNodes(bool recursive)
         {
             dirty = false;
 
@@ -145,15 +142,14 @@ namespace ProjectManager.Controls.TreeView
                 Nodes.RemoveAt(0);
 
             // do a nice stateful update against the filesystem
-            GenericNodeList nodesToDie = new GenericNodeList();
+            var nodesToDie = new GenericNodeList();
             
             // don't remove project output node if it exists - it's annoying when it
             // disappears during a build
             foreach (GenericNode node in Nodes)
             {
-                if (node is ProjectOutputNode)
+                if (node is ProjectOutputNode output)
                 {
-                    var output = node as ProjectOutputNode;
                     if (project != null && !project.IsPathHidden(output.BackingPath)) output.Refresh(recursive);
                     else nodesToDie.Add(output);
                 }
@@ -171,14 +167,14 @@ namespace ProjectManager.Controls.TreeView
                 PopulateFiles(nodesToDie, recursive);
             }
 
-            foreach (GenericNode node in nodesToDie)
+            foreach (var node in nodesToDie)
             {
                 node.Dispose();
                 Nodes.Remove(node);
             }
         }
 
-        private void PopulateDirectories(GenericNodeList nodesToDie, bool recursive)
+        void PopulateDirectories(GenericNodeList nodesToDie, bool recursive)
         {
             foreach (string directory in Directory.GetDirectories(BackingPath))
             {
@@ -195,11 +191,9 @@ namespace ProjectManager.Controls.TreeView
                         nodesToDie.Remove(node);
                         continue;
                     }
-                    else 
-                    {
-                        TreeNode fake = Tree.NodeMap[directory];
-                        if (fake.Parent != null) fake.Parent.Nodes.Remove(fake);
-                    }
+
+                    TreeNode fake = Tree.NodeMap[directory];
+                    fake.Parent?.Nodes.Remove(fake);
                 }
 
                 node = new DirectoryNode(directory);
@@ -209,10 +203,9 @@ namespace ProjectManager.Controls.TreeView
             }
         }
 
-        private void PopulateFiles(GenericNodeList nodesToDie, bool recursive)
+        void PopulateFiles(GenericNodeList nodesToDie, bool recursive)
         {
-            string[] files = Directory.GetFiles(BackingPath);
-
+            var files = Directory.GetFiles(BackingPath);
             foreach (string file in files)
             {
                 if (IsFileExcluded(file))
@@ -233,15 +226,13 @@ namespace ProjectManager.Controls.TreeView
                 }
             }
 
-            FileMapping mapping = GetFileMapping(files);
-            if (mapping == null) return;
+            var mapping = GetFileMapping(files);
+            if (mapping is null) return;
 
             foreach (string file in files)
             {
-                if (IsFileExcluded(file))
-                    continue;
-
-                GenericNode node = Tree.NodeMap[file];
+                if (IsFileExcluded(file)) continue;
+                var node = Tree.NodeMap[file];
 
                 // ensure this file is in the right spot
                 if (mapping.ContainsKey(file) && Tree.NodeMap.ContainsKey(mapping[file]))
@@ -251,7 +242,7 @@ namespace ProjectManager.Controls.TreeView
             }
         }
 
-        private void EnsureParentedBy(GenericNode child, GenericNode parent)
+        static void EnsureParentedBy(GenericNode child, TreeNode parent)
         {
             if (child.Parent != parent)
             {
@@ -261,12 +252,12 @@ namespace ProjectManager.Controls.TreeView
         }
 
         // Let another plugin extend the tree by specifying mapping
-        private FileMapping GetFileMapping(string[] files)
+        FileMapping GetFileMapping(string[] files)
         {
             FileMappingRequest request = new FileMappingRequest(files);
 
             // Give plugins a chance to respond first
-            if (OnDirectoryNodeMapping != null) OnDirectoryNodeMapping(this, request);
+            OnDirectoryNodeMapping?.Invoke(this, request);
 
             // No one cares?  ok, well we do know one thing: Mxml
             if (request.Mapping.Count == 0 && Tree.Project is AS3Project 
@@ -281,7 +272,7 @@ namespace ProjectManager.Controls.TreeView
         /// directories first, then files).
         /// </summary>
         /// <param name="node"></param>
-        private static void InsertNode(TreeNodeCollection nodes, GenericNode node)
+        static void InsertNode(TreeNodeCollection nodes, GenericNode node)
         {
             bool inserted = false;
 
@@ -308,13 +299,13 @@ namespace ProjectManager.Controls.TreeView
             if (Tree.PathToSelect == node.BackingPath)
             {
                 // use SelectedNode so multiselect treeview can handle painting
-                Tree.SelectedNodes = new ArrayList(new object[]{node});
+                Tree.SelectedNodes = new List<TreeNode> {node};
             }
         }
 
         bool IsDirectoryExcluded(string path)
         {
-            if (project == null) return false;
+            if (project is null) return false;
 
             string dirName = Path.GetFileName(path);
             foreach (string excludedDir in PluginMain.Settings.ExcludedDirectories)
@@ -326,7 +317,7 @@ namespace ProjectManager.Controls.TreeView
 
         bool IsFileExcluded(string path)
         {
-            if (project == null) return false;
+            if (project is null) return false;
 
             if (path == project.ProjectPath) return true;
 

@@ -1,0 +1,43 @@
+## JavaScript
+-cmd echo Building pure JavaScript
+--next hxml/js.hxml
+
+## NodeJS
+-cmd echo Building NodeJS
+--next hxml/nodejs.hxml
+
+## HashLink
+-cmd echo Building HashLink
+--next hxml/hl.hxml
+
+## C++
+-cmd echo Building C++
+--next hxml/cpp.hxml
+
+## C#
+-cmd echo Building C#
+--next hxml/cs.hxml
+
+## Java
+-cmd echo Building Java
+--next hxml/java.hxml
+
+## Neko
+-cmd echo Building Neko
+--next hxml/neko.hxml
+
+## SWF
+-cmd echo Building SWF
+--next hxml/flash.hxml
+
+## Python
+-cmd echo Building Python
+--next hxml/python.hxml
+
+## PHP
+-cmd echo Building PHP
+--next hxml/php.hxml
+
+## Lua
+-cmd echo Building Lua
+--next hxml/lua.hxml

@@ -26,10 +26,13 @@ namespace CodeRefactor.Provider
         {
             DefaultFactory.RegisterValidator(typeof(Rename), expr =>
             {
-                if (expr == null || expr.IsNull()) return false;
+                if (expr is null || expr.IsNull()) return false;
+                var sci = PluginBase.MainForm.CurrentDocument?.SciControl;
+                if (sci is null || sci.SelTextSize != 0) return false;
                 var c = expr.Context.Value[0];
                 if (char.IsDigit(c)) return false;
-                var file = expr.InFile ?? expr.Type.InFile;
+                var file = expr.InFile ?? expr.Type?.InFile ?? FileModel.Ignore;
+                if (file == FileModel.Ignore) return false;
                 var language = PluginBase.MainForm.SciConfig.GetLanguageFromFile(file.FileName);
                 var characterClass = ScintillaControl.Configuration.GetLanguage(language).characterclass.Characters;
                 if (!characterClass.Contains(c)) return false;
@@ -40,8 +43,8 @@ namespace CodeRefactor.Provider
             });
             DefaultFactory.RegisterValidator(typeof(OrganizeImports), expr => expr.InFile.Imports.Count > 0);
             DefaultFactory.RegisterValidator(typeof(DelegateMethods), expr => expr != null && !expr.IsNull() && expr.InFile != null && expr.InClass != null
-                                                                              && expr.Type is ClassModel type && !type.IsVoid()
-                                                                              && expr.Member is MemberModel member && member.Flags is FlagType flags
+                                                                              && expr.Type is { } type && !type.IsVoid()
+                                                                              && expr.Member is { } member && member.Flags is { } flags
                                                                               && flags.HasFlag(FlagType.Variable)
                                                                               && !flags.HasFlag(FlagType.LocalVar) && !flags.HasFlag(FlagType.ParameterVar)
                                                                               && expr.Type != ASContext.Context.CurrentClass);
@@ -49,38 +52,26 @@ namespace CodeRefactor.Provider
 
         public static void Register(string language, ICommandFactory factory)
         {
-            if (ContainsLanguage(language)) LanguageToFactory.Remove(language);
+            LanguageToFactory.Remove(language);
             LanguageToFactory.Add(language, factory);
         }
 
-        public static bool ContainsLanguage(string language)
+        public static bool ContainsLanguage(string language) => LanguageToFactory.ContainsKey(language);
+
+        public static ICommandFactory? GetFactoryForCurrentDocument() => GetFactory(PluginBase.MainForm.CurrentDocument?.SciControl?.ConfigurationLanguage);
+
+        public static ICommandFactory? GetFactory(ASResult target) => GetFactory(target.InFile ?? target.Type.InFile);
+
+        public static ICommandFactory? GetFactory(FileModel file) => GetFactory(PluginBase.MainForm.SciConfig.GetLanguageFromFile(file.FileName));
+
+        public static ICommandFactory? GetFactory(ITabbedDocument document) => GetFactory(document.SciControl);
+
+        public static ICommandFactory? GetFactory(ScintillaControl sci) => GetFactory(sci.ConfigurationLanguage);
+
+        public static ICommandFactory? GetFactory(string language)
         {
-            return LanguageToFactory.ContainsKey(language);
-        }
-
-        public static ICommandFactory GetFactoryForCurrentDocument()
-        {
-            var document = PluginBase.MainForm.CurrentDocument;
-            if (document == null || !document.IsEditable) return null;
-            return GetFactory(document);
-        }
-
-        public static ICommandFactory GetFactory(ASResult target) => GetFactory(target.InFile ?? target.Type.InFile);
-
-        public static ICommandFactory GetFactory(FileModel file)
-        {
-            var language = PluginBase.MainForm.SciConfig.GetLanguageFromFile(file.FileName);
-            return GetFactory(language);
-        }
-
-        public static ICommandFactory GetFactory(ITabbedDocument document) => GetFactory(document.SciControl);
-
-        public static ICommandFactory GetFactory(ScintillaControl sci) => GetFactory(sci.ConfigurationLanguage);
-
-        public static ICommandFactory GetFactory(string language)
-        {
-            ICommandFactory factory;
-            LanguageToFactory.TryGetValue(language, out factory);
+            if (language.IsNullOrEmpty()) return null;
+            LanguageToFactory.TryGetValue(language, out var factory);
             return factory;
         }
     }

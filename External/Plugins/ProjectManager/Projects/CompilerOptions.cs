@@ -10,13 +10,13 @@ namespace ProjectManager.Projects
     [Serializable]
     public abstract class CompilerOptions : ICloneable
     {
-        static BinaryFormatter formatter = new BinaryFormatter();
+        static readonly BinaryFormatter formatter = new BinaryFormatter();
 
-        object ICloneable.Clone() { return Clone(); }
+        object ICloneable.Clone() => Clone();
 
         public CompilerOptions Clone()
         {
-            MemoryStream stream = new MemoryStream();
+            var stream = new MemoryStream();
             formatter.Serialize(stream, this);
             stream.Position = 0;
             return (CompilerOptions)formatter.Deserialize(stream);

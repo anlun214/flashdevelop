@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -26,8 +27,8 @@ namespace CodeRefactor.Provider
         /// </summary>
         public static IDictionary<string, List<SearchMatch>> GetInitialResultsList(FRResults results)
         {
-            var searchResults = new Dictionary<string, List<SearchMatch>>();
-            if (results == null)
+            var result = new Dictionary<string, List<SearchMatch>>();
+            if (results is null)
             {
                 // I suppose this should never happen -- 
                 // normally invoked when the user cancels the FindInFiles dialogue.  
@@ -47,34 +48,30 @@ namespace CodeRefactor.Provider
                 // TODO: test if this is necessary
                 foreach (var entry in results)
                 {
-                    searchResults.Add(entry.Key, new List<SearchMatch>());
+                    result.Add(entry.Key, new List<SearchMatch>());
                     foreach (var match in entry.Value)
                     {
-                        searchResults[entry.Key].Add(match);
+                        result[entry.Key].Add(match);
                     }
                 }
             }
-            return searchResults;
+            return result;
         }
 
         /// <summary>
         /// Gets if the language is valid for refactoring
         /// </summary>
-        public static bool GetLanguageIsValid()
-        {
-            var document = PluginBase.MainForm.CurrentDocument;
-            if (document == null || !document.IsEditable) return false;
-            var lang = document.SciControl.ConfigurationLanguage;
-            return CommandFactoryProvider.ContainsLanguage(lang);
-        }
+        public static bool GetLanguageIsValid() => GetLanguageIsValid(PluginBase.MainForm.CurrentDocument?.SciControl);
+
+        /// <summary>
+        /// Gets if the language is valid for refactoring
+        /// </summary>
+        public static bool GetLanguageIsValid(ScintillaControl sci) => sci != null && CommandFactoryProvider.ContainsLanguage(sci.ConfigurationLanguage);
 
         /// <summary>
         /// Checks if the model is not null and file exists
         /// </summary>
-        public static bool ModelFileExists(FileModel model)
-        {
-            return model != null && File.Exists(model.FileName);
-        }
+        public static bool ModelFileExists(FileModel model) => File.Exists(model?.FileName);
 
         /// <summary>
         /// Checks if the file is under the current SDK
@@ -94,8 +91,9 @@ namespace CodeRefactor.Provider
         /// </summary>
         public static ASResult GetDefaultRefactorTarget()
         {
-            var sci = PluginBase.MainForm.CurrentDocument.SciControl;
-            if (!ASContext.Context.IsFileValid || (sci == null)) return null;
+            if (!ASContext.Context.IsFileValid) return null;
+            var sci = PluginBase.MainForm.CurrentDocument?.SciControl;
+            if (sci is null) return null;
             var position = sci.WordEndPosition(sci.CurrentPos, true);
             return ASComplete.GetExpressionType(sci, position);
         }
@@ -104,7 +102,7 @@ namespace CodeRefactor.Provider
         {
             var type = target.Type;
             var member = target.Member;
-            if ((type.IsEnum() && member == null) || (!type.IsVoid() && (member == null || (member.Flags & FlagType.Constructor) > 0)))
+            if (type.Flags.HasFlag(FlagType.Enum) && member is null || !type.IsVoid() && (member is null || (member.Flags & FlagType.Constructor) > 0))
                 return type;
             return member;
         }
@@ -116,17 +114,16 @@ namespace CodeRefactor.Provider
         /// </summary>
         public static ASResult GetRefactorTargetFromFile(string path, DocumentHelper associatedDocumentHelper)
         {
-            string fileName = Path.GetFileNameWithoutExtension(path);
-            int line = 0;
-            var doc = associatedDocumentHelper.LoadDocument(path);
-            ScintillaControl sci = doc != null ? doc.SciControl : null;
-            if (sci == null) return null; // Should not happen...
-            List<ClassModel> classes = ASContext.Context.CurrentModel.Classes;
+            var sci = associatedDocumentHelper.LoadDocument(path)?.SciControl;
+            if (sci is null) return null; // Should not happen...
+            var fileName = Path.GetFileNameWithoutExtension(path);
+            var line = 0;
+            var classes = ASContext.Context.CurrentModel.Classes;
             if (classes.Count > 0)
             {
-                foreach (ClassModel classModel in classes)
+                foreach (var classModel in classes)
                 {
-                    if (classModel.Name.Equals(fileName))
+                    if (classModel.Name == fileName)
                     {
                         // Optimization, we don't need to make a full lookup in this case
                         return new ASResult
@@ -139,9 +136,9 @@ namespace CodeRefactor.Provider
             }
             else
             {
-                foreach (MemberModel member in ASContext.Context.CurrentModel.Members)
+                foreach (var member in ASContext.Context.CurrentModel.Members)
                 {
-                    if (member.Name.Equals(fileName))
+                    if (member.Name == fileName)
                     {
                         line = member.LineFrom;
                         break;
@@ -153,7 +150,6 @@ namespace CodeRefactor.Provider
                 sci.SelectText(fileName, sci.PositionFromLine(line));
                 return GetDefaultRefactorTarget();
             }
-
             return null;
         }
 
@@ -161,108 +157,99 @@ namespace CodeRefactor.Provider
         /// Checks if a given search match actually points to the given target source
         /// </summary>
         /// <returns>True if the SearchMatch does point to the target source.</returns>
-        public static ASResult DeclarationLookupResult(ScintillaControl Sci, int position, DocumentHelper associatedDocumentHelper)
+        public static ASResult DeclarationLookupResult(ScintillaControl sci, int position, DocumentHelper associatedDocumentHelper)
         {
-            if (!ASContext.Context.IsFileValid || (Sci == null)) return null;
+            if (!ASContext.Context.IsFileValid || sci is null) return null;
             // get type at cursor position
-            ASResult result = ASComplete.GetExpressionType(Sci, position);
+            var result = ASComplete.GetExpressionType(sci, position);
             if (result.IsPackage) return result;
             // open source and show declaration
-            if (!result.IsNull())
+            if (result.IsNull()) return null;
+            if (result.Member != null && (result.Member.Flags & FlagType.AutomaticVar) > 0) return null;
+            var model = result.InFile ?? result.Member?.InFile ?? result.Type?.InFile;
+            if (model is null || model.FileName == "") return null;
+            var inClass = result.InClass ?? result.Type;
+            // for Back command
+            int lookupLine = sci.CurrentLine;
+            int lookupCol = sci.CurrentPos - sci.PositionFromLine(lookupLine);
+            ASContext.Panel.SetLastLookupPosition(ASContext.Context.CurrentFile, lookupLine, lookupCol);
+            // open the file
+            if (model != ASContext.Context.CurrentModel)
             {
-                if (result.Member != null && (result.Member.Flags & FlagType.AutomaticVar) > 0) return null;
-                FileModel model = result.InFile ?? result.Member?.InFile ?? result.Type?.InFile;
-                if (model == null || model.FileName == "") return null;
-                ClassModel inClass = result.InClass ?? result.Type;
-                // for Back command
-                int lookupLine = Sci.CurrentLine;
-                int lookupCol = Sci.CurrentPos - Sci.PositionFromLine(lookupLine);
-                ASContext.Panel.SetLastLookupPosition(ASContext.Context.CurrentFile, lookupLine, lookupCol);
-                // open the file
-                if (model != ASContext.Context.CurrentModel)
+                if (File.Exists(model.FileName))
                 {
-                    if (model.FileName.Length > 0 && File.Exists(model.FileName))
+                    if (!associatedDocumentHelper.FilesOpenedDocumentReferences.ContainsKey(model.FileName)) associatedDocumentHelper.LoadDocument(model.FileName);
+                    sci = associatedDocumentHelper.FilesOpenedDocumentReferences[model.FileName].SciControl;
+                }
+                else
+                {
+                    ASComplete.OpenVirtualFile(model);
+                    result.InFile = ASContext.Context.CurrentModel;
+                    if (result.InFile is null) return null;
+                    if (inClass != null)
                     {
-                        if (!associatedDocumentHelper.ContainsOpenedDocument(model.FileName)) associatedDocumentHelper.LoadDocument(model.FileName);
-                        Sci = associatedDocumentHelper.GetOpenedDocument(model.FileName).SciControl;
+                        inClass = result.InFile.GetClassByName(inClass.Name);
+                        if (result.Member != null) result.Member = inClass.Members.Search(result.Member.Name);
                     }
-                    else
+                    else if (result.Member != null)
                     {
-                        ASComplete.OpenVirtualFile(model);
-                        result.InFile = ASContext.Context.CurrentModel;
-                        if (result.InFile == null) return null;
-                        if (inClass != null)
-                        {
-                            inClass = result.InFile.GetClassByName(inClass.Name);
-                            if (result.Member != null) result.Member = inClass.Members.Search(result.Member.Name, 0, 0);
-                        }
-                        else if (result.Member != null)
-                        {
-                            result.Member = result.InFile.Members.Search(result.Member.Name, 0, 0);
-                        }
-                        Sci = ASContext.CurSciControl;
+                        result.Member = result.InFile.Members.Search(result.Member.Name);
                     }
+                    sci = PluginBase.MainForm.CurrentDocument?.SciControl;
                 }
-                if (Sci == null) return null;
-                if ((inClass == null || inClass.IsVoid()) && result.Member == null) return null;
-                int line = 0;
-                string name = null;
-                bool isClass = false;
-                // member
-                if (result.Member != null && result.Member.LineFrom > 0)
-                {
-                    line = result.Member.LineFrom;
-                    name = result.Member.Name;
-                }
-                // class declaration
-                else if (inClass.LineFrom > 0)
-                {
-                    line = inClass.LineFrom;
-                    name = inClass.Name;
-                    isClass = true;
-                    // constructor
-                    foreach (MemberModel member in inClass.Members)
-                    {
-                        if ((member.Flags & FlagType.Constructor) > 0)
-                        {
-                            line = member.LineFrom;
-                            name = member.Name;
-                            isClass = false;
-                            break;
-                        }
-                    }
-                }
-                if (line > 0) // select
-                {
-                    if (isClass) ASComplete.LocateMember(Sci, "(class|interface)", name, line);
-                    else ASComplete.LocateMember(Sci, "(function|var|const|get|set|property|[,(])", name, line);
-                }
-                return result;
             }
-            return null;
+            if (sci is null) return null;
+            if ((inClass is null || inClass.IsVoid()) && result.Member is null) return null;
+            var line = 0;
+            string name = null;
+            var isClass = false;
+            // member
+            if (result.Member != null && result.Member.LineFrom > 0)
+            {
+                line = result.Member.LineFrom;
+                name = result.Member.Name;
+            }
+            // class declaration
+            else if (inClass != null && inClass.LineFrom > 0)
+            {
+                line = inClass.LineFrom;
+                name = inClass.Name;
+                isClass = true;
+                // constructor
+                foreach (MemberModel member in inClass.Members)
+                {
+                    if ((member.Flags & FlagType.Constructor) > 0)
+                    {
+                        line = member.LineFrom;
+                        name = member.Name;
+                        isClass = false;
+                        break;
+                    }
+                }
+            }
+            if (line > 0) // select
+            {
+                if (isClass) ASComplete.LocateMember(sci, "(class|interface)", name, line);
+                else ASComplete.LocateMember(sci, "(function|var|const|get|set|property|[,(])", name, line);
+            }
+            return result;
         }
 
         /// <summary>
         /// Simply checks the given flag combination if they contain a specific flag
         /// </summary>
-        public static bool CheckFlag(FlagType flags, FlagType checkForThisFlag)
-        {
-            return (flags & checkForThisFlag) == checkForThisFlag;
-        }
+        public static bool CheckFlag(FlagType flags, FlagType checkForThisFlag) => (flags & checkForThisFlag) == checkForThisFlag;
 
         /// <summary>
         /// Checks if the given match actually is the declaration.
         /// </summary>
-        public static bool IsMatchTheTarget(ScintillaControl Sci, SearchMatch match, ASResult target, DocumentHelper associatedDocumentHelper)
+        public static bool IsMatchTheTarget(ScintillaControl sci, SearchMatch match, ASResult target, DocumentHelper associatedDocumentHelper)
         {
-            if (Sci == null || target == null || target.InFile == null || target.Member == null)
-            {
-                return false;
-            }
-            string originalFile = Sci.FileName;
+            if (sci is null || target?.InFile is null || target.Member is null) return false;
+            var originalFile = sci.FileName;
             // get type at match position
-            ASResult declaration = DeclarationLookupResult(Sci, Sci.MBSafePosition(match.Index) + Sci.MBSafeTextLength(match.Value), associatedDocumentHelper);
-            return (declaration.InFile != null && originalFile == declaration.InFile.FileName) && (Sci.CurrentPos == (Sci.MBSafePosition(match.Index) + Sci.MBSafeTextLength(match.Value)));
+            var declaration = DeclarationLookupResult(sci, sci.MBSafePosition(match.Index) + sci.MBSafeTextLength(match.Value), associatedDocumentHelper);
+            return declaration.InFile != null && originalFile == declaration.InFile.FileName && sci.CurrentPos == sci.MBSafePosition(match.Index) + sci.MBSafeTextLength(match.Value);
         }
 
         /// <summary>
@@ -271,16 +258,16 @@ namespace CodeRefactor.Provider
         /// <returns>True if the SearchMatch does point to the target source.</returns>
         public static bool DoesMatchPointToTarget(ScintillaControl sci, SearchMatch match, ASResult target, DocumentHelper associatedDocumentHelper)
         {
-            if (sci == null || target == null) return false;
+            if (sci is null || target is null) return false;
             FileModel targetInFile = null;
 
             if (target.InFile != null)
                 targetInFile = target.InFile;
-            else if (target.Member != null && target.InClass == null)
+            else if (target.Member != null && target.InClass is null)
                 targetInFile = target.Member.InFile;
 
             var matchMember = targetInFile != null && target.Member != null;
-            var matchType = target.Member == null && target.Type != null;
+            var matchType = target.Member is null && target.Type != null;
             if (!matchMember && !matchType) return false;
 
             ASResult result = null;
@@ -292,20 +279,14 @@ namespace CodeRefactor.Provider
                 associatedDocumentHelper?.RegisterLoadedDocument(PluginBase.MainForm.CurrentDocument);
             }
             // check if the result matches the target
-            if (result == null || (result.InFile == null && result.Type == null)) return false;
-            if (matchMember)
-            {
-                if (result.Member == null) return false;
-
-                var resultInFile = result.InClass != null ? result.InFile : result.Member.InFile;
-
-                return resultInFile.BasePath == targetInFile.BasePath
-                    && resultInFile.FileName == targetInFile.FileName
-                    && result.Member.LineFrom == target.Member.LineFrom
-                    && result.Member.Name == target.Member.Name;
-            }
-            // type
-            return result.Type != null && result.Type.QualifiedName == target.Type.QualifiedName;
+            if (result is null || result.InFile is null && result.Type is null) return false;
+            if (!matchMember) return result.Type != null && result.Type.QualifiedName == target.Type.QualifiedName;
+            if (result.Member is null) return false;
+            var resultInFile = result.InClass != null ? result.InFile : result.Member.InFile;
+            return resultInFile.BasePath == targetInFile.BasePath
+                   && resultInFile.FileName == targetInFile.FileName
+                   && result.Member.LineFrom == target.Member.LineFrom
+                   && result.Member.Name == target.Member.Name;
         }
 
         /// <summary>
@@ -320,9 +301,7 @@ namespace CodeRefactor.Provider
         /// <param name="asynchronous">executes in asynchronous mode</param>
         /// <returns>If "asynchronous" is false, will return the search results, otherwise returns null on bad input or if running in asynchronous mode.</returns>
         public static FRResults FindTargetInFiles(ASResult target, FRProgressReportHandler progressReportHandler, FRFinishedHandler findFinishedHandler, bool asynchronous)
-        {
-            return FindTargetInFiles(target, progressReportHandler, findFinishedHandler, asynchronous, false, false);
-        }
+            => FindTargetInFiles(target, progressReportHandler, findFinishedHandler, asynchronous, false, false);
 
         /// <summary>
         /// Finds the given target in all project files.
@@ -337,9 +316,7 @@ namespace CodeRefactor.Provider
         /// <param name="onlySourceFiles">searches only on defined classpaths</param>
         /// <returns>If "asynchronous" is false, will return the search results, otherwise returns null on bad input or if running in asynchronous mode.</returns>
         public static FRResults FindTargetInFiles(ASResult target, FRProgressReportHandler progressReportHandler, FRFinishedHandler findFinishedHandler, bool asynchronous, bool onlySourceFiles, bool ignoreSdkFiles)
-        {
-            return FindTargetInFiles(target, progressReportHandler, findFinishedHandler, asynchronous, onlySourceFiles, ignoreSdkFiles, false, false);
-        }
+            => FindTargetInFiles(target, progressReportHandler, findFinishedHandler, asynchronous, onlySourceFiles, ignoreSdkFiles, false, false);
 
         /// <summary>
         /// Finds the given target in all project files.
@@ -355,26 +332,26 @@ namespace CodeRefactor.Provider
         /// <returns>If "asynchronous" is false, will return the search results, otherwise returns null on bad input or if running in asynchronous mode.</returns>
         public static FRResults FindTargetInFiles(ASResult target, FRProgressReportHandler progressReportHandler, FRFinishedHandler findFinishedHandler, bool asynchronous, bool onlySourceFiles, bool ignoreSdkFiles, bool includeComments, bool includeStrings)
         {
-            if (target == null) return null;
+            if (target is null) return null;
             var member = target.Member;
             var type = target.Type;
-            if ((member == null || string.IsNullOrEmpty(member.Name)) && (type == null || (type.Flags & (FlagType.Class | FlagType.Enum)) == 0))
+            if ((member is null || string.IsNullOrEmpty(member.Name)) && (type is null || (type.Flags & (FlagType.Class | FlagType.Enum)) == 0))
             {
                 return null;
             }
             FRConfiguration config;
-            IProject project = PluginBase.CurrentProject;
-            string file = PluginBase.MainForm.CurrentDocument.FileName;
+            var project = PluginBase.CurrentProject;
+            var file = PluginBase.MainForm.CurrentDocument.FileName;
             // This is out of the project, just look for this file...
             if (IsPrivateTarget(target) || !IsProjectRelatedFile(project, file))
             {
-                string mask = Path.GetFileName(file);
+                var mask = Path.GetFileName(file);
                 if (mask.Contains("[model]"))
                 {
                     findFinishedHandler?.Invoke(new FRResults());
                     return null;
                 }
-                string path = Path.GetDirectoryName(file);
+                var path = Path.GetDirectoryName(file);
                 config = new FRConfiguration(path, mask, false, GetFRSearch(member != null ? member.Name : type.Name, includeComments, includeStrings));
             }
             else if (member != null && !CheckFlag(member.Flags, FlagType.Constructor))
@@ -387,7 +364,7 @@ namespace CodeRefactor.Provider
                 config = new FRConfiguration(GetAllProjectRelatedFiles(project, onlySourceFiles, ignoreSdkFiles), GetFRSearch(type.Name, includeComments, includeStrings));
             }
             config.CacheDocuments = true;
-            FRRunner runner = new FRRunner();
+            var runner = new FRRunner();
             if (progressReportHandler != null) runner.ProgressReport += progressReportHandler;
             if (findFinishedHandler != null) runner.Finished += findFinishedHandler;
             if (asynchronous) runner.SearchAsync(config);
@@ -401,75 +378,68 @@ namespace CodeRefactor.Provider
         /// </summary>
         public static bool IsProjectRelatedFile(IProject project, string file)
         {
-            if (project == null) return false;
-            IASContext context = ASContext.GetLanguageContext(project.Language);
-            if (context == null) return false;
-            foreach (PathModel pathModel in context.Classpath)
+            if (project is null) return false;
+            var context = ASContext.GetLanguageContext(project.Language);
+            if (context is null) return false;
+            if (context.Classpath is {} classpath)
             {
-                string absolute = project.GetAbsolutePath(pathModel.Path);
-                if (file.StartsWithOrdinal(absolute)) return true;
+                foreach (var pathModel in classpath)
+                {
+                    var absolute = project.GetAbsolutePath(pathModel.Path);
+                    if (file.StartsWithOrdinal(absolute)) return true;
+                }
             }
             // If no source paths are defined, is it under the project?
-            if (project.SourcePaths.Length == 0)
-            {
-                string projRoot = Path.GetDirectoryName(project.ProjectPath);
-                if (file.StartsWithOrdinal(projRoot)) return true;
-            }
-            return false;
+            if (project.SourcePaths.Length != 0) return false;
+            var projRoot = Path.GetDirectoryName(project.ProjectPath);
+            return file.StartsWithOrdinal(projRoot);
         }
 
         /// <summary>
         /// Gets all files related to the project
         /// </summary>
-        private static List<string> GetAllProjectRelatedFiles(IProject project, bool onlySourceFiles)
-        {
-            return GetAllProjectRelatedFiles(project, onlySourceFiles, false);
-        }
-        private static List<string> GetAllProjectRelatedFiles(IProject project, bool onlySourceFiles, bool ignoreSdkFiles)
+        static List<string> GetAllProjectRelatedFiles(IProject project, bool onlySourceFiles)
+            => GetAllProjectRelatedFiles(project, onlySourceFiles, false);
+
+        static List<string> GetAllProjectRelatedFiles(IProject project, bool onlySourceFiles, bool ignoreSdkFiles)
         {
             var files = new List<string>();
-            string filter = project.DefaultSearchFilter;
+            var filter = project.DefaultSearchFilter;
             if (string.IsNullOrEmpty(filter)) return files;
-            string[] filters = project.DefaultSearchFilter.Split(';');
+            var filters = project.DefaultSearchFilter.Split(new[] {';'}, StringSplitOptions.RemoveEmptyEntries);
             if (!onlySourceFiles)
             {
-                IASContext context = ASContext.GetLanguageContext(project.Language);
-                if (context == null) return files;
-                foreach (PathModel pathModel in context.Classpath)
+                var context = ASContext.GetLanguageContext(project.Language);
+                if (context is null) return files;
+                foreach (var pathModel in context.Classpath)
                 {
-                    string absolute = project.GetAbsolutePath(pathModel.Path);
-                    if (Directory.Exists(absolute))
+                    var absolute = project.GetAbsolutePath(pathModel.Path);
+                    if (!Directory.Exists(absolute) || ignoreSdkFiles && IsUnderSDKPath(absolute)) continue;
+                    foreach (var filterMask in filters)
                     {
-                        if (ignoreSdkFiles && IsUnderSDKPath(absolute)) continue;
-                        foreach (string filterMask in filters)
-                        {
-                            files.AddRange(Directory.GetFiles(absolute, filterMask, SearchOption.AllDirectories));
-                        }
+                        files.AddRange(Directory.GetFiles(absolute, filterMask, SearchOption.AllDirectories));
                     }
                 }
             }
             else
             {
-                var lookupPaths = project.SourcePaths.
-                    Concat(ProjectManager.PluginMain.Settings.GetGlobalClasspaths(project.Language)).
-                    Select(project.GetAbsolutePath).Distinct();
-                foreach (string path in lookupPaths)
+                var lookupPaths = project.SourcePaths.Concat(ProjectManager.PluginMain.Settings.GetGlobalClasspaths(project.Language));
+                if (project is Project p && p.AdditionalPaths != null) lookupPaths = lookupPaths.Concat(p.AdditionalPaths);
+                lookupPaths = lookupPaths.Select(project.GetAbsolutePath).Distinct();
+                foreach (var path in lookupPaths)
                 {
-                    if (Directory.Exists(path))
+                    if (!Directory.Exists(path) || ignoreSdkFiles && IsUnderSDKPath(path)) continue;
+                    foreach (var filterMask in filters)
                     {
-                        if (ignoreSdkFiles && IsUnderSDKPath(path)) continue;
-                        foreach (string filterMask in filters)
-                        {
-                            files.AddRange(Directory.GetFiles(path, filterMask, SearchOption.AllDirectories));
-                        }
+                        files.AddRange(Directory.GetFiles(path, filterMask, SearchOption.AllDirectories));
                     }
                 }
             }
             // If no source paths are defined, get files directly from project path
             if (project.SourcePaths.Length == 0)
             {
-                string projRoot = Path.GetDirectoryName(project.ProjectPath);
-                foreach (string filterMask in filters)
+                var projRoot = Path.GetDirectoryName(project.ProjectPath);
+                foreach (var filterMask in filters)
                 {
                     files.AddRange(Directory.GetFiles(projRoot, filterMask, SearchOption.AllDirectories));
                 }
@@ -483,7 +453,7 @@ namespace CodeRefactor.Provider
         /// </summary>
         internal static FRSearch GetFRSearch(string memberName, bool includeComments, bool includeStrings)
         {
-            FRSearch search = new FRSearch(memberName);
+            var search = new FRSearch(memberName);
             search.IsRegex = false;
             search.IsEscaped = false;
             search.WholeWord = true;
@@ -501,7 +471,7 @@ namespace CodeRefactor.Provider
         /// </summary>
         public static void ReplaceMatches(List<SearchMatch> matches, ScintillaControl sci, string replacement)
         {
-            if (sci == null || matches == null || matches.Count == 0) return;
+            if (sci is null || matches.IsNullOrEmpty()) return;
             sci.BeginUndoAction();
             try
             {
@@ -525,10 +495,10 @@ namespace CodeRefactor.Provider
         /// </summary>
         public static void SelectMatch(ScintillaControl sci, SearchMatch match)
         {
-            if (sci == null || match == null) return;
-            int start = sci.MBSafePosition(match.Index); // wchar to byte position
-            int end = start + sci.MBSafeTextLength(match.Value); // wchar to byte text length
-            int line = sci.LineFromPosition(start);
+            if (sci is null || match is null) return;
+            var start = sci.MBSafePosition(match.Index); // wchar to byte position
+            var end = start + sci.MBSafeTextLength(match.Value); // wchar to byte text length
+            var line = sci.LineFromPosition(start);
             sci.EnsureVisible(line);
             sci.SetSel(start, end);
         }
@@ -539,18 +509,14 @@ namespace CodeRefactor.Provider
         /// </summary>
         /// <param name="oldPath"></param>
         /// <param name="newPath"></param>
-        public static void Copy(string oldPath, string newPath)
-        {
-            Copy(oldPath, newPath, true);
-        }
-        public static void Copy(string oldPath, string newPath, bool renaming)
-        {
-            Copy(oldPath, newPath, renaming, true);
-        }
+        public static void Copy(string oldPath, string newPath) => Copy(oldPath, newPath, true);
+
+        public static void Copy(string oldPath, string newPath, bool renaming) => Copy(oldPath, newPath, renaming, true);
+
         public static void Copy(string oldPath, string newPath, bool renaming, bool simulateMove)
         {
             if (string.IsNullOrEmpty(oldPath) || string.IsNullOrEmpty(newPath)) return;
-            Project project = (Project)PluginBase.CurrentProject;
+            var project = (Project)PluginBase.CurrentProject;
             string newDocumentClass = null;
 
             if (File.Exists(oldPath) && FileHelper.ConfirmOverwrite(newPath))
@@ -566,14 +532,13 @@ namespace CodeRefactor.Provider
             {
                 newPath = renaming ? Path.Combine(Path.GetDirectoryName(oldPath), newPath) : Path.Combine(newPath, Path.GetFileName(oldPath));
                 if (!FileHelper.ConfirmOverwrite(newPath)) return;
-                string searchPattern = project.DefaultSearchFilter;
                 if (simulateMove)
                 {
                     // We need to use our own method for moving directories if folders in the new path already exist
                     FileHelper.CopyDirectory(oldPath, newPath, true);
-                    foreach (string pattern in searchPattern.Split(';'))
+                    foreach (var pattern in project.DefaultSearchFilter.Split(new[] {';'}, StringSplitOptions.RemoveEmptyEntries))
                     {
-                        foreach (string file in Directory.GetFiles(oldPath, pattern, SearchOption.AllDirectories))
+                        foreach (var file in Directory.GetFiles(oldPath, pattern, SearchOption.AllDirectories))
                         {
                             if (project.IsDocumentClass(file))
                             {
@@ -599,18 +564,14 @@ namespace CodeRefactor.Provider
         /// </summary>
         /// <param name="oldPath"></param>
         /// <param name="newPath"></param>
-        public static void Move(string oldPath, string newPath)
-        {
-            Move(oldPath, newPath, true);
-        }
-        public static void Move(string oldPath, string newPath, bool renaming)
-        {
-            Move(oldPath, newPath, renaming, oldPath);
-        }
+        public static void Move(string oldPath, string newPath) => Move(oldPath, newPath, true);
+
+        public static void Move(string oldPath, string newPath, bool renaming) => Move(oldPath, newPath, renaming, oldPath);
+
         public static void Move(string oldPath, string newPath, bool renaming, string originalOld)
         {
             if (string.IsNullOrEmpty(oldPath) || string.IsNullOrEmpty(newPath)) return;
-            Project project = (Project)PluginBase.CurrentProject;
+            var project = (Project)PluginBase.CurrentProject;
             string newDocumentClass = null;
 
             if (File.Exists(oldPath) && FileHelper.ConfirmOverwrite(newPath))
@@ -625,10 +586,10 @@ namespace CodeRefactor.Provider
             {
                 newPath = renaming ? Path.Combine(Path.GetDirectoryName(oldPath), newPath) : Path.Combine(newPath, Path.GetFileName(oldPath));
                 if (!FileHelper.ConfirmOverwrite(newPath)) return;
-                string searchPattern = project.DefaultSearchFilter;
-                foreach (string pattern in searchPattern.Split(';'))
+                var searchPattern = project.DefaultSearchFilter;
+                foreach (var pattern in searchPattern.Split(new[] {';'}, StringSplitOptions.RemoveEmptyEntries))
                 {
-                    foreach (string file in Directory.GetFiles(oldPath, pattern, SearchOption.AllDirectories))
+                    foreach (var file in Directory.GetFiles(oldPath, pattern, SearchOption.AllDirectories))
                     {
                         if (project.IsDocumentClass(file))
                         {
@@ -652,36 +613,33 @@ namespace CodeRefactor.Provider
         
         public static bool IsInsideCommentOrString(SearchMatch match, ScintillaControl sci, bool includeComments, bool includeStrings)
         {
-            int style = sci.BaseStyleAt(match.Index);
-            return includeComments && IsCommentStyle(style) || includeStrings && IsStringStyle(style);
+            var style = sci.BaseStyleAt(match.Index);
+            return (includeComments && IsCommentStyle(style))
+                   || (includeStrings && IsStringStyle(style));
         }
 
         public static bool IsCommentStyle(int style)
         {
-            switch (style)
+            return style switch
             {
-                case 1: //COMMENT
-                case 2: //COMMENTLINE
-                case 3: //COMMENTDOC
-                case 15: //COMMENTLINEDOC
-                    return true;
-                default:
-                    return false;
-            }
+                1 => true, //COMMENT
+                2 => true, //COMMENTLINE
+                3 => true, //COMMENTDOC
+                15 => true,//COMMENTLINEDOC
+                _ => false,
+            };
         }
 
         public static bool IsStringStyle(int style)
         {
-            switch (style)
+            return style switch
             {
-                case 6: //STRING
-                case 7: //CHARACTER
-                case 13: //VERBATIM
-                case 14: //REGEX
-                    return true;
-                default:
-                    return false;
-            }
+                6 => true, //STRING
+                7 => true, //CHARACTER
+                13 => true,//VERBATIM
+                14 => true,//REGEX
+                _ => false,
+            };
         }
 
         internal static void RaiseMoveEvent(string fromPath, string toPath)
@@ -708,15 +666,10 @@ namespace CodeRefactor.Provider
         internal static bool IsPrivateTarget(ASResult target)
         {
             if (target.IsPackage) return false;
-            var member = target.Member;
-            if (member != null)
-            {
-                return (member.Access == Visibility.Private && !target.InFile.haXe)
-                    || ((member.Flags & FlagType.LocalVar) > 0 || (member.Flags & FlagType.ParameterVar) > 0);
-            }
-            var type = target.Type;
-            return type != null && type.Access == Visibility.Private && (!type.InFile.haXe || new SemVer(PluginBase.CurrentSDK.Version) < "4.0.0");
+            if (target.Member is {} member) return member.Access == Visibility.Private && !target.InFile.haXe || (member.Flags & FlagType.LocalVar) > 0 || (member.Flags & FlagType.ParameterVar) > 0;
+            return target.Type is {} type
+                   && type.Access == Visibility.Private
+                   && (!type.InFile.haXe || new SemVer(PluginBase.CurrentSDK.Version) < "4.0.0");
         }
     }
-
 }

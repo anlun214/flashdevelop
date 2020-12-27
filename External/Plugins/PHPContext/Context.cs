@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.RegularExpressions;
 using ASCompletion.Context;
 using ASCompletion.Model;
+using PluginCore;
 using PluginCore.Helpers;
 
 namespace PHPContext
@@ -11,13 +12,13 @@ namespace PHPContext
     public class Context : AS2Context.Context
     {
         #region initialization
-        new static readonly protected Regex re_CMD_BuildCommand =
+        protected new static readonly Regex re_CMD_BuildCommand =
             new Regex("@php[\\s]+(?<params>.*)", RegexOptions.Compiled | RegexOptions.Multiline);
 
-        static private readonly Regex re_PHPext =
+        private static readonly Regex re_PHPext =
             new Regex(".php[3-9]?", RegexOptions.Compiled);
 
-        private ContextSettings langSettings;
+        private readonly ContextSettings langSettings;
         private List<InlineRange> phpRanges; // inlined PHP ranges in HTML
 
         public Context(ContextSettings initSettings)
@@ -64,8 +65,8 @@ namespace PHPContext
             features.dot = "->";
             features.voidKey = "void";
             features.objectKey = "Object";
-            features.typesPreKeys = new string[] { "namespace", "new", "extends", "implements", "as" };
-            features.codeKeywords = new string[] {
+            features.typesPreKeys = new[] { "namespace", "new", "extends", "implements", "as" };
+            features.codeKeywords = new[] {
                 "and", "or", "xor", "exception", "as", "break", "case", "continue", "declare", "default", 
                 "do", "else", "elseif", "enddeclare", "endfor", "endforeach", "endif", "endswitch", 
                 "endwhile", "for", "foreach", "global", "if", "new", "switch", "use", "while", 
@@ -93,14 +94,8 @@ namespace PHPContext
         {
             ReleaseClasspath();
             started = true;
-            if (langSettings == null) throw new Exception("BuildClassPath() must be overridden");
-            if (contextSetup == null)
-            {
-                contextSetup = new ContextSetupInfos();
-                contextSetup.Lang = settings.LanguageId;
-                contextSetup.Platform = "PHP";
-                contextSetup.Version = "5.0";
-            }
+            if (langSettings is null) throw new Exception("BuildClassPath() must be overridden");
+            contextSetup ??= new ContextSetupInfos {Lang = settings.LanguageId, Platform = "PHP", Version = "5.0"};
 
             //
             // Class pathes
@@ -114,7 +109,7 @@ namespace PHPContext
             }
 
             // add external pathes
-            List<PathModel> initCP = classPath;
+            var initCP = classPath;
             classPath = new List<PathModel>();
             if (contextSetup.Classpath != null)
             {
@@ -125,7 +120,7 @@ namespace PHPContext
             // add library
             AddPath(Path.Combine(PathHelper.LibraryDir, settings.LanguageId + "/classes"));
             // add user pathes from settings
-            if (settings.UserClasspath != null && settings.UserClasspath.Length > 0)
+            if (!settings.UserClasspath.IsNullOrEmpty())
             {
                 foreach (string cpath in settings.UserClasspath) AddPath(cpath.Trim());
             }
@@ -152,7 +147,7 @@ namespace PHPContext
         /// <param name="fileName">File path</param>
         protected override void GetCurrentFileModel(string fileName)
         {
-            string ext = Path.GetExtension(fileName);
+            var ext = Path.GetExtension(fileName);
             if (!re_PHPext.IsMatch(ext))
             {
                 cFile = FileModel.Ignore;
@@ -160,12 +155,11 @@ namespace PHPContext
             }
             else
             {
-                cFile = new FileModel(fileName);
-                cFile.Context = this;
-                cFile.HasFiltering = true;
-                ASFileParser parser = new ASFileParser();
-                parser.ParseSrc(cFile, CurSciControl.Text);
-                cLine = CurSciControl.CurrentLine;
+                var sci = PluginBase.MainForm.CurrentDocument?.SciControl;
+                if (sci is null) return;
+                cFile = new FileModel(fileName) {Context = this, HasFiltering = true};
+                cFile = GetCodeModel(cFile, sci.Text);
+                cLine = sci.CurrentLine;
                 UpdateContext(cLine);
             }
         }
@@ -188,10 +182,8 @@ namespace PHPContext
         /// </summary>
         /// <param name="model"></param>
         /// <returns></returns>
-        public override void FilterSource(FileModel model)
-        {
-            PhpFilter.FilterSource(model, phpRanges);
-        }
+        public override void FilterSource(FileModel model) => PhpFilter.FilterSource(model, phpRanges);
+
         #endregion
 
         #region class resolution
@@ -219,8 +211,7 @@ namespace PHPContext
             if (withClass != null && inClass.InFile.Package == withClass.InFile.Package)
                 return Visibility.Public;
             // public only
-            else
-                return Visibility.Public;
+            return Visibility.Public;
         }
 
         /// <summary>
@@ -255,10 +246,6 @@ namespace PHPContext
                 }*/
             }
             // not found
-            else
-            {
-                //ErrorHandler.ShowInfo("Top-level elements class not found. Please check your Program Settings.");
-            }
 
             // special variables
             topLevel.Members.Add(new MemberModel("$this", "", FlagType.Variable, Visibility.Public));
@@ -283,19 +270,19 @@ namespace PHPContext
         /// </summary>
         protected override void UpdateTopLevelElements()
         {
-            var special = topLevel.Members.Search("$this", 0, 0);
+            var special = topLevel.Members.Search("$this");
             if (special != null)
             {
                 if (!cClass.IsVoid()) special.Type = cClass.Name;
                 else special.Type = (cFile.Version > 1) ? features.voidKey : docType;
             }
-            special = topLevel.Members.Search("self", 0, 0);
+            special = topLevel.Members.Search("self");
             if (special != null)
             {
                 if (!cClass.IsVoid()) special.Type = cClass.Name;
                 else special.Type = (cFile.Version > 1) ? features.voidKey : docType;
             }
-            special = topLevel.Members.Search("parent", 0, 0);
+            special = topLevel.Members.Search("parent");
             if (special != null)
             {
                 cClass.ResolveExtends();
@@ -303,17 +290,6 @@ namespace PHPContext
                 if (!extends.IsVoid()) special.Type = extends.Name;
                 else special.Type = (cFile.Version > 1) ? features.voidKey : features.objectKey;
             }
-        }
-
-        /// <summary>
-        /// Retrieves a package content
-        /// </summary>
-        /// <param name="name">Package path</param>
-        /// <param name="lazyMode">Force file system exploration</param>
-        /// <returns>Package folders and types</returns>
-        public override FileModel ResolvePackage(string name, bool lazyMode)
-        {
-            return base.ResolvePackage(name, lazyMode);
         }
         #endregion
 
@@ -338,10 +314,7 @@ namespace PHPContext
             // to be implemented
         }
 
-        override public bool CanBuild
-        {
-            get { return false; }
-        }
+        public override bool CanBuild => false;
 
         /// <summary>
         /// Run compiler in the current files's base folder with current classpath

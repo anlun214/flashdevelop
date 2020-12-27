@@ -9,6 +9,8 @@ using CodeRefactor.TestUtils;
 using NSubstitute;
 using NUnit.Framework;
 using PluginCore;
+using PluginCore.Controls;
+using PluginCore.Helpers;
 using ScintillaNet;
 
 namespace CodeRefactor.Commands
@@ -198,6 +200,8 @@ namespace CodeRefactor.Commands
             {
                 SetHaxeFeatures(sci);
                 SetSrc(sci, sourceText);
+                UITools.Init();
+                CompletionList.CreateControl(PluginBase.MainForm);
                 var command = (ExtractLocalVariableCommand)CommandFactoryProvider.GetFactory(sci).CreateExtractLocalVariableCommand(false, newName);
                 command.Execute();
                 ((CompletionListItem)command.CompletionList[contextualGeneratorItem]).PerformClick();
@@ -212,7 +216,7 @@ namespace CodeRefactor.Commands
 
             static string ReadAllText(string fileName) => TestFile.ReadAllText(GetFullPath(fileName));
 
-            [TestFixtureSetUp]
+            [OneTimeSetUp]
             public void OrganizeImportsFixtureSetUp()
             {
                 SetAs3Features(sci);
@@ -326,7 +330,7 @@ namespace CodeRefactor.Commands
                 var sourceText = ReadAllText(fileName);
                 fileName = GetFullPath(fileName);
                 fileName = Path.GetFileNameWithoutExtension(fileName).Replace('.', Path.DirectorySeparatorChar) + Path.GetExtension(fileName);
-                fileName = Path.GetFullPath(fileName);
+                fileName = Path.Combine(PathHelper.AppDir.Replace("FlashDevelop\\Bin\\Debug\\", string.Empty), fileName);
                 fileName = fileName.Replace(testFilesAssemblyPath, testFilesDirectory);
                 fileName = fileName.Replace(".as", "_withoutEntryPoint.as");
                 ASContext.Context.CurrentModel.FileName = fileName;
@@ -337,7 +341,7 @@ namespace CodeRefactor.Commands
             public static string Rename(ScintillaControl sci, string sourceText, string newName)
             {
                 var context = SynchronizationContext.Current;
-                if (context == null) Assert.Ignore("SynchronizationContext.Current is null");
+                if (context is null) Assert.Ignore("SynchronizationContext.Current is null");
                 SetSrc(sci, sourceText);
                 var waitHandle = new AutoResetEvent(false);
                 CommandFactoryProvider.GetFactory(sci)

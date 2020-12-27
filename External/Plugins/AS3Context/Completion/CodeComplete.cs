@@ -1,13 +1,16 @@
-﻿using System.Linq;
+﻿using System.Collections.Generic;
+using System.Linq;
 using ASCompletion.Completion;
 using ASCompletion.Context;
 using ASCompletion.Model;
 using PluginCore;
+using ScintillaNet;
 
 namespace AS3Context.Completion
 {
     class CodeComplete : ASComplete
     {
+        /// <inheritdoc />
         protected override ASResult EvalExpression(string expression, ASExpr context, FileModel inFile, ClassModel inClass, bool complete, bool asFunction, bool filterVisibility)
         {
             if (!string.IsNullOrEmpty(expression))
@@ -19,12 +22,12 @@ namespace AS3Context.Completion
                     // for example: -1.<complete>
                     || (expression.Length > 1 && expression[0] == '-' && char.IsDigit(expression, 1))
                     // for example: --1.<complete>
-                    || (expression.Length > 2 && expression[0] == '-' && expression[1] == '-' && char.IsDigit(expression, 2)))
+                    || (expression.Length > 2 && expression[0] == '-' && expression[1] == '-' &&
+                        char.IsDigit(expression, 2)))
                 {
                     int p;
-                    int pe1;
                     var pe2 = -1;
-                    if ((pe1 = expression.IndexOfOrdinal("e-")) != -1 || (pe2 = expression.IndexOfOrdinal("e+")) != -1)
+                    if (expression.Contains("e-", out var pe1) || expression.Contains("e+", out pe2))
                     {
                         p = expression.IndexOf('.');
                         if (p == -1) p = expression.Length - 1;
@@ -50,12 +53,15 @@ namespace AS3Context.Completion
                             else p = -1;
                         }
                     }
+
                     if (p != -1)
                     {
                         expression = "Number.#." + expression.Substring(p + 1);
-                        return base.EvalExpression(expression, context, inFile, inClass, complete, asFunction, filterVisibility);
+                        return base.EvalExpression(expression, context, inFile, inClass, complete, asFunction,
+                            filterVisibility);
                     }
                 }
+
                 if (context.SubExpressions != null)
                 {
                     var count = context.SubExpressions.Count - 1;
@@ -67,21 +73,24 @@ namespace AS3Context.Completion
                         // for example: [].<complete>
                         if (expression[0] == '#' && i == count)
                         {
-                            var type = ctx.ResolveType(features.arrayKey, inFile);
+                            var type = ResolveType(features.arrayKey, inFile);
                             if (type.IsVoid()) break;
                             expression = type.Name + ".#" + expression.Substring(("#" + i + "~").Length);
                             context.SubExpressions.RemoveAt(i);
-                            return base.EvalExpression(expression, context, inFile, inClass, complete, asFunction, filterVisibility);
+                            return base.EvalExpression(expression, context, inFile, inClass, complete, asFunction,
+                                filterVisibility);
                         }
+
                         expression = expression.Replace(">.#" + i + "~", ">" + subExpression);
                         expression = expression.Replace(".#" + i + "~", "." + subExpression);
                     }
                 }
-                if (expression.Length > 1 && expression[0] is char c && (c == '"' || c == '\''))
+
+                if (expression.Length > 1 && expression[0] is { } c && (c == '"' || c == '\''))
                 {
-                    var type = ctx.ResolveType(features.stringKey, inFile);
+                    var type = ResolveType(features.stringKey, inFile);
                     // for example: ""|, ''|
-                    if (context.SubExpressions == null) expression = type.Name + ".#.";
+                    if (context.SubExpressions is null) expression = type.Name + ".#.";
                     // for example: "".<complete>, ''.<complete>
                     else
                     {
@@ -96,7 +105,7 @@ namespace AS3Context.Completion
                 else if (expression.Contains(".<")) expression = expression.Replace(".<", "<");
                 // for example: /pattern/.<complete>
                 else if (expression.StartsWithOrdinal("#RegExp")) expression = expression.Substring(1);
-                else if (context.SubExpressions != null && context.SubExpressions.Count > 0)
+                else if (!context.SubExpressions.IsNullOrEmpty())
                 {
                     var expr = context.SubExpressions.Last();
                     // for example: (v as T).<complete>, (v is Complete).<complete>, ...
@@ -105,14 +114,63 @@ namespace AS3Context.Completion
                         var type = ctx.ResolveToken(expr, inFile);
                         if (!type.IsVoid())
                         {
-                            expression = type.Name + ".#" + expression.Substring(("#" + (context.SubExpressions.Count - 1) + "~").Length);
+                            expression = type.Name + ".#" +
+                                         expression.Substring(("#" + (context.SubExpressions.Count - 1) + "~").Length);
                             context.SubExpressions.RemoveAt(context.SubExpressions.Count - 1);
                             if (context.SubExpressions.Count == 0) context.SubExpressions = null;
                         }
                     }
                 }
             }
+
             return base.EvalExpression(expression, context, inFile, inClass, complete, asFunction, filterVisibility);
+        }
+
+        /// <inheritdoc />
+        protected override bool HandleNewCompletion(ScintillaControl sci, string tail, bool autoHide, string keyword, List<ICompletionListItem> list)
+        {
+            if (keyword == "new") list.RemoveAll(it => it is MemberItem {Member: { } member} && (member.Flags & FlagType.Interface) != 0);
+            return base.HandleNewCompletion(sci, tail, autoHide, keyword, list);
+        }
+
+        /// <inheritdoc />
+        protected override bool IsAvailableForToolTip(ScintillaControl sci, int position)
+        {
+            return base.IsAvailableForToolTip(sci, position)
+                   || (sci.GetWordFromPosition(position) is { } word
+                       && (word == "as" || word == "is" || word == "instanceof" || word == "typeof" || word == "delete"));
+        }
+
+        /// <inheritdoc />
+        protected override string GetToolTipTextEx(ASResult expr)
+        {
+            if (expr.Member is null && expr.Context?.Value is {} s)
+            {
+                switch (s)
+                {
+                    // for example: variable as$(EntryPoint) Type
+                    case "as":
+                        expr.Member = Context.StubAsExpression;
+                        break;
+                    // for example: variable is$(EntryPoint) Type
+                    case "is":
+                        expr.Member = Context.StubIsExpression;
+                        break;
+                    // for example: variable instanceof$(EntryPoint) function
+                    case "instanceof":
+                        expr.Member = Context.StubInstanceOfExpression;
+                        break;
+                    // for example: typeof(EntryPoint) expression
+                    case "typeof":
+                        expr.Member = Context.StubTypeOfExpression;
+                        break;
+                    // for example: delete$(EntryPoint) reference
+                    case "delete":
+                        expr.Member = Context.StubDeleteExpression;
+                        break;
+                }
+            }
+            return base.GetToolTipTextEx(expr);
         }
     }
 }

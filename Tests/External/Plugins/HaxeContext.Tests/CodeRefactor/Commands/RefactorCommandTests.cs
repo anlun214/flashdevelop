@@ -9,6 +9,7 @@ using HaXeContext.TestUtils;
 using NSubstitute;
 using NUnit.Framework;
 using PluginCore;
+using PluginCore.Helpers;
 using ProjectManager;
 using ProjectManager.Projects.Haxe;
 
@@ -17,7 +18,7 @@ namespace HaXeContext.CodeRefactor.Commands
     [TestFixture]
     class OrganizeImportsTests : ASCompleteTests
     {
-        [TestFixtureSetUp]
+        [OneTimeSetUp]
         public void Setup()
         {
             CommandFactoryProvider.Register("haxe", new HaxeCommandFactory());
@@ -73,10 +74,24 @@ namespace HaXeContext.CodeRefactor.Commands
             }
         }
 
+        static IEnumerable<TestCaseData> Issue2512TestCases
+        {
+            get
+            {
+                yield return new TestCaseData(ReadAllText("BeforeOrganizeImports_issue2512_1"), "BeforeOrganizeImports_issue2512_1.hx", false)
+                    .Returns(ReadAllText("BeforeOrganizeImports_issue2512_1"))
+                    .SetName("'${Json.stringify({x:1})}'. Issue2512. String interpolation");
+                yield return new TestCaseData(ReadAllText("BeforeOrganizeImports_issue2512_2"), "BeforeOrganizeImports_issue2512_2.hx", false)
+                    .Returns(ReadAllText("AfterOrganizeImports_issue2512_2"))
+                    .SetName("\"${Json.stringify({x:1})}\". Issue2512. String interpolation");
+            }
+        }
+
         [
             Test, 
             TestCaseSource(nameof(TestCases)),
             TestCaseSource(nameof(Issue1342TestCases)),
+            TestCaseSource(nameof(Issue2512TestCases)),
         ]
         public string OrganizeImports(string sourceText, string fileName, bool separatePackages) => global::CodeRefactor.Commands.RefactorCommandTests.OrganizeImportsTests.OrganizeImports(sci, sourceText, fileName, separatePackages);
     }
@@ -86,7 +101,7 @@ namespace HaXeContext.CodeRefactor.Commands
     {
         static readonly string ProjectPath = $"\\Tests\\External\\Plugins\\{nameof(HaXeContext)}.Tests\\Test Files\\";
 
-        [TestFixtureSetUp]
+        [OneTimeSetUp]
         public void Setup()
         {
             SetHaxeFeatures(sci);
@@ -143,14 +158,25 @@ namespace HaXeContext.CodeRefactor.Commands
             }
         }
 
-        static IEnumerable<TestCaseData> RenameEnumAbstractValueTestIssue2373Cases
+        static IEnumerable<TestCaseData> RenameEnumAbstractValueIssue2373TestCases
         {
             get
             {
                 yield return new TestCaseData("BeforeRename_issue2373_1", "NewName")
                     .Returns(ReadAllText("AfterRename_issue2373_1"))
-                    .SetName("AType.Enu|mAbstractValue. Issue 2373. Case 1")
+                    .SetName("AType.Enu<rename>mAbstractValue. Issue 2373. Case 1")
                     .SetDescription("https://github.com/fdorg/flashdevelop/issues/2373");
+            }
+        }
+
+        static IEnumerable<TestCaseData> RenameVarialeIssue2764TestCases
+        {
+            get
+            {
+                yield return new TestCaseData("BeforeRename_issue2764_1", "newName")
+                    .Returns(ReadAllText("AfterRename_issue2764_1"))
+                    .SetName("var _va<rename>lue:Void->Void. Issue 2764. Case 1")
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2764");
             }
         }
 
@@ -158,7 +184,8 @@ namespace HaXeContext.CodeRefactor.Commands
             Test,
             TestCaseSource(nameof(TestCases)),
             TestCaseSource(nameof(RenameEnumTestCases)),
-            TestCaseSource(nameof(RenameEnumAbstractValueTestIssue2373Cases)),
+            TestCaseSource(nameof(RenameEnumAbstractValueIssue2373TestCases)),
+            TestCaseSource(nameof(RenameVarialeIssue2764TestCases)),
         ]
         public string Rename(string fileName, string newName)
         {
@@ -193,9 +220,8 @@ namespace HaXeContext.CodeRefactor.Commands
         {
             var sourceText = ReadAllText(fileName);
             fileName = GetFullPath(fileName);
-            fileName = Path.GetFileNameWithoutExtension(fileName).Replace('.', Path.DirectorySeparatorChar)
-                       + Path.GetExtension(fileName);
-            fileName = Path.GetFullPath(fileName);
+            fileName = Path.ChangeExtension(Path.GetFileNameWithoutExtension(fileName).Replace('.', Path.DirectorySeparatorChar), Path.GetExtension(fileName));
+            fileName = Path.Combine(PathHelper.AppDir.Replace("FlashDevelop\\Bin\\Debug\\", string.Empty), fileName);
             fileName = fileName.Replace($"\\FlashDevelop\\Bin\\Debug\\{nameof(HaXeContext)}\\Test_Files\\", ProjectPath);
             fileName = fileName.Replace(".hx", "_withoutEntryPoint.hx");
             ASContext.Context.CurrentModel.FileName = fileName;

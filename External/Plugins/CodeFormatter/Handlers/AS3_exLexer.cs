@@ -219,7 +219,8 @@ public class AS3_exLexer : Lexer {
                 ){
                 success = false;
                 return success;
-            }else if(next == '\\'){
+            }
+            if(next == '\\'){
                 next=input.LA(index+1);
                 if(next == '\r' || next == '\n'){
                     success=false;
@@ -600,10 +601,7 @@ public class AS3_exLexer : Lexer {
 
     }
     
-    override public string GrammarFileName
-    {
-        get { return "AS3_ex.g3";} 
-    }
+    override public string GrammarFileName => "AS3_ex.g3";
 
     // $ANTLR start "AS"
     public void mAS() // throws RecognitionException [2]
@@ -4866,17 +4864,12 @@ public class AS3_exLexer : Lexer {
             int alt25 = 3;
             int LA25_0 = input.LA(1);
 
-            if ( (LA25_0 == '$' || (LA25_0 >= 'A' && LA25_0 <= 'Z') || LA25_0 == '_' || (LA25_0 >= 'a' && LA25_0 <= 'z')) && (synpred1_AS3_ex()) )
+            alt25 = LA25_0 switch
             {
-                alt25 = 1;
-            }
-            else if ( ((LA25_0 >= '0' && LA25_0 <= '9')) )
-            {
-                alt25 = 2;
-            }
-            else 
-            {
-                alt25 = 3;}
+                '$' or >= 'A' and <= 'Z' or '_' or >= 'a' and <= 'z' when (synpred1_AS3_ex()) => 1,
+                >= '0' and <= '9' => 2,
+                _ => 3
+            };
             switch (alt25) 
             {
                 case 1 :
@@ -6228,10 +6221,10 @@ public class AS3_exLexer : Lexer {
     protected DFA30 dfa30;
     private void InitializeCyclicDFAs()
     {
-        this.dfa18 = new DFA18(this);
-        this.dfa30 = new DFA30(this);
+        dfa18 = new DFA18(this);
+        dfa30 = new DFA30(this);
 
-        this.dfa30.specialStateTransitionHandler = new DFA.SpecialStateTransitionHandler(DFA30_SpecialStateTransition);
+        dfa30.specialStateTransitionHandler = DFA30_SpecialStateTransition;
     }
 
     const string DFA18_eotS =
@@ -6267,22 +6260,18 @@ public class AS3_exLexer : Lexer {
         public DFA18(BaseRecognizer recognizer)
         {
             this.recognizer = recognizer;
-            this.decisionNumber = 18;
-            this.eot = DFA18_eot;
-            this.eof = DFA18_eof;
-            this.min = DFA18_min;
-            this.max = DFA18_max;
-            this.accept = DFA18_accept;
-            this.special = DFA18_special;
-            this.transition = DFA18_transition;
+            decisionNumber = 18;
+            eot = DFA18_eot;
+            eof = DFA18_eof;
+            min = DFA18_min;
+            max = DFA18_max;
+            accept = DFA18_accept;
+            special = DFA18_special;
+            transition = DFA18_transition;
 
         }
 
-        override public string Description
-        {
-            get { return "1472:10: fragment DEC_NUMBER : ( ( NUMBER )+ '.' ( NUMBER )* | '.' ( NUMBER )+ | ( NUMBER )+ );"; }
-        }
-
+        override public string Description => "1472:10: fragment DEC_NUMBER : ( ( NUMBER )+ '.' ( NUMBER )* | '.' ( NUMBER )+ | ( NUMBER )+ );";
     }
 
     const string DFA30_eotS =
@@ -6895,22 +6884,18 @@ public class AS3_exLexer : Lexer {
         public DFA30(BaseRecognizer recognizer)
         {
             this.recognizer = recognizer;
-            this.decisionNumber = 30;
-            this.eot = DFA30_eot;
-            this.eof = DFA30_eof;
-            this.min = DFA30_min;
-            this.max = DFA30_max;
-            this.accept = DFA30_accept;
-            this.special = DFA30_special;
-            this.transition = DFA30_transition;
+            decisionNumber = 30;
+            eot = DFA30_eot;
+            eof = DFA30_eof;
+            min = DFA30_min;
+            max = DFA30_max;
+            accept = DFA30_accept;
+            special = DFA30_special;
+            transition = DFA30_transition;
 
         }
 
-        override public string Description
-        {
-            get { return "1:1: Tokens : ( AS | BREAK | CASE | CATCH | CLASS | CONST | CONTINUE | DEFAULT | DELETE | DO | ELSE | EXTENDS | FALSE | FINALLY | FOR | FUNCTION | IF | IMPLEMENTS | IMPORT | IN | INSTANCEOF | INTERFACE | INTERNAL | IS | NATIVE | NEW | NULL | PACKAGE | PRIVATE | PROTECTED | PUBLIC | RETURN | SUPER | SWITCH | THIS | THROW | TO | TRUE | TRY | TYPEOF | USE | VAR | VOID | WHILE | WITH | EACH | GET | SET | NAMESPACE | INCLUDE | DYNAMIC | FINAL | OVERRIDE | STATIC | SEMI | LCURLY | RCURLY | LPAREN | RPAREN | LBRACK | RBRACK | DOT | COMMA | LT | GT | LTE | EQ | NEQ | SAME | NSAME | PLUS | SUB | STAR | DIV | MOD | INC | DEC | SHL | AND | OR | XOR | NOT | INV | LAND | LOR | QUE | COLON | ASSIGN | DIV_ASSIGN | MOD_ASSIGN | ADD_ASSIGN | SUB_ASSIGN | SHL_ASSIGN | LAND_ASSIGN | LOR_ASSIGN | AND_ASSIGN | XOR_ASSIGN | OR_ASSIGN | ELLIPSIS | XML_ELLIPSIS | XML_TEND | XML_E_TEND | XML_NS_OP | XML_AT | XML_LS_STD | XML_LS_END | EOL | WHITESPACE | COMMENT_MULTILINE | COMMENT_SINGLELINE | SINGLE_QUOTE_LITERAL | DOUBLE_QUOTE_LITERAL | REGULAR_EXPR_LITERAL | HEX_NUMBER_LITERAL | DEC_NUMBER_LITERAL | IDENTIFIER | XML_COMMENT | XML_CDATA | XML_PI | XML_TEXT );"; }
-        }
-
+        override public string Description => "1:1: Tokens : ( AS | BREAK | CASE | CATCH | CLASS | CONST | CONTINUE | DEFAULT | DELETE | DO | ELSE | EXTENDS | FALSE | FINALLY | FOR | FUNCTION | IF | IMPLEMENTS | IMPORT | IN | INSTANCEOF | INTERFACE | INTERNAL | IS | NATIVE | NEW | NULL | PACKAGE | PRIVATE | PROTECTED | PUBLIC | RETURN | SUPER | SWITCH | THIS | THROW | TO | TRUE | TRY | TYPEOF | USE | VAR | VOID | WHILE | WITH | EACH | GET | SET | NAMESPACE | INCLUDE | DYNAMIC | FINAL | OVERRIDE | STATIC | SEMI | LCURLY | RCURLY | LPAREN | RPAREN | LBRACK | RBRACK | DOT | COMMA | LT | GT | LTE | EQ | NEQ | SAME | NSAME | PLUS | SUB | STAR | DIV | MOD | INC | DEC | SHL | AND | OR | XOR | NOT | INV | LAND | LOR | QUE | COLON | ASSIGN | DIV_ASSIGN | MOD_ASSIGN | ADD_ASSIGN | SUB_ASSIGN | SHL_ASSIGN | LAND_ASSIGN | LOR_ASSIGN | AND_ASSIGN | XOR_ASSIGN | OR_ASSIGN | ELLIPSIS | XML_ELLIPSIS | XML_TEND | XML_E_TEND | XML_NS_OP | XML_AT | XML_LS_STD | XML_LS_END | EOL | WHITESPACE | COMMENT_MULTILINE | COMMENT_SINGLELINE | SINGLE_QUOTE_LITERAL | DOUBLE_QUOTE_LITERAL | REGULAR_EXPR_LITERAL | HEX_NUMBER_LITERAL | DEC_NUMBER_LITERAL | IDENTIFIER | XML_COMMENT | XML_CDATA | XML_PI | XML_TEXT );";
     }
 
 
@@ -6992,19 +6977,17 @@ public class AS3_exLexer : Lexer {
                     int index30_34 = input.Index();
                     input.Rewind();
                     s = -1;
-                    if ( (LA30_34 == '=') ) { s = 126; }
+                    s = LA30_34 switch
+                    {
+                        '=' => 126,
+                        '>' => 127,
+                        '*' => 128,
+                        '/' => 129,
+                        >= '\u0000' and <= '\t' or >= '\u000B' and <= '\f' or >= '\u000E' and <= ')' or >= '+' and <=
+                            '.' or >= '0' and <= '<' or >= '?' and <= '\uFFFF' when ((isRegularExpression())) => 131,
+                        _ => 130
+                    };
 
-                    else if ( (LA30_34 == '>') ) { s = 127; }
-
-                    else if ( (LA30_34 == '*') ) { s = 128; }
-
-                    else if ( (LA30_34 == '/') ) { s = 129; }
-
-                    else if ( ((LA30_34 >= '\u0000' && LA30_34 <= '\t') || (LA30_34 >= '\u000B' && LA30_34 <= '\f') || (LA30_34 >= '\u000E' && LA30_34 <= ')') || (LA30_34 >= '+' && LA30_34 <= '.') || (LA30_34 >= '0' && LA30_34 <= '<') || (LA30_34 >= '?' && LA30_34 <= '\uFFFF')) && ((isRegularExpression())) ) { s = 131; }
-
-                    else s = 130;
-
-                     
                     input.Seek(index30_34);
                     if ( s >= 0 ) return s;
                     break;

@@ -8,6 +8,7 @@ using PluginCore.Controls;
 using PluginCore.FRService;
 using PluginCore.Localization;
 using PluginCore.Managers;
+using ScintillaNet;
 
 namespace CodeRefactor.Commands
 {
@@ -18,7 +19,7 @@ namespace CodeRefactor.Commands
     {
         internal const string TraceGroup = "CodeRefactor.FindAllReferences";
 
-        protected bool IgnoreDeclarationSource { get; private set; }
+        protected bool IgnoreDeclarationSource { get; }
 
         /// <summary>
         /// Gets or sets if searching is only performed on user defined classpaths
@@ -93,7 +94,7 @@ namespace CodeRefactor.Commands
         /// <summary>
         /// Invoked as the FRSearch gathers results.
         /// </summary>
-        private void RunnerProgress(int percentDone)
+        static void RunnerProgress(int percentDone)
         {
             // perhaps we should show some progress to the user, especially if there are a lot of files to check...
             UserInterfaceManager.ProgressDialog.UpdateProgress(percentDone);
@@ -132,7 +133,7 @@ namespace CodeRefactor.Commands
         /// <summary>
         /// Filters the initial result set by determining which entries actually resolve back to our declaration target.
         /// </summary>
-        private IDictionary<string, List<SearchMatch>> ResolveActualMatches(FRResults results, ASResult target)
+        IDictionary<string, List<SearchMatch>> ResolveActualMatches(FRResults results, ASResult target)
         {
             // this will hold actual references back to the source member (some result hits could point to different members with the same name)
             var actualMatches = new Dictionary<string, List<SearchMatch>>();
@@ -160,21 +161,13 @@ namespace CodeRefactor.Commands
                             //ignore the declaration source
                             foundDeclarationSource = true;
                         }
-                        else
-                        {
-                            add = true;
-                        }
+                        else add = true;
                     }
-                    else if (optionsEnabled)
-                    {
-                        add = RefactoringHelper.IsInsideCommentOrString(match, sci, IncludeComments, IncludeStrings);
-                    }
+                    else if (optionsEnabled) add = IsInsideCommentOrString(match, sci, IncludeComments, IncludeStrings);
 
                     if (add)
                     {
-                        if (!actualMatches.ContainsKey(currentFileName))
-                            actualMatches.Add(currentFileName, new List<SearchMatch>());
-
+                        if (!actualMatches.ContainsKey(currentFileName)) actualMatches.Add(currentFileName, new List<SearchMatch>());
                         actualMatches[currentFileName].Add(match);
                     }
 
@@ -186,13 +179,16 @@ namespace CodeRefactor.Commands
             return actualMatches;
         }
 
+        protected virtual bool IsInsideCommentOrString(SearchMatch match, ScintillaControl sci, bool includeComments, bool includeStrings)
+            => RefactoringHelper.IsInsideCommentOrString(match, sci, includeComments, includeStrings);
+
         /// <summary>
         /// Outputs the results to the TraceManager
         /// </summary>
-        private void ReportResults()
+        void ReportResults()
         {
-            var groupData = TraceManager.CreateGroupDataUnique(TraceGroup, CurrentTarget.Member == null ? CurrentTarget.Type.Name : CurrentTarget.Member.Name);
-            PluginBase.MainForm.CallCommand("PluginCommand", "ResultsPanel.ClearResults;" + groupData);
+            var groupData = TraceManager.CreateGroupDataUnique(TraceGroup, CurrentTarget.Member is null ? CurrentTarget.Type.Name : CurrentTarget.Member.Name);
+            PluginBase.MainForm.CallCommand("PluginCommand", $"ResultsPanel.ClearResults;{groupData}");
             foreach (var entry in Results)
             {
                 // Outputs the lines as they change
@@ -202,11 +198,10 @@ namespace CodeRefactor.Commands
                     TraceManager.Add(message, (int) TraceType.Info, groupData);
                 }
             }
-            PluginBase.MainForm.CallCommand("PluginCommand", "ResultsPanel.ShowResults;" + groupData);
+            PluginBase.MainForm.CallCommand("PluginCommand", $"ResultsPanel.ShowResults;{groupData}");
         }
 
         #endregion
 
     }
-
 }

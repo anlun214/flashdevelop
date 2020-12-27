@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using PluginCore;
@@ -27,30 +28,21 @@ namespace ProjectManager.Projects
 
     public abstract class Project : IProject
     {
-        string path; // full path to this project, including filename
-
         protected MovieOptions movieOptions;
-        CompilerOptions compilerOptions;
-        PathCollection classpaths;
-        PathCollection compileTargets;
-        HiddenPathCollection hiddenPaths;
-        AssetCollection libraryAssets;
-        internal Dictionary<string, string> storage;
-        bool traceEnabled; // selected configuration 
-        string targetBuild;
+        internal Dictionary<string, string> storage = new Dictionary<string, string>();
         string preferredSDK;
         string currentSDK;
         PathCollection absClasspaths;
         BuildEventInfo[] vars; // arguments to replace in paths
 
         public OutputType OutputType = OutputType.Unknown;
-        public string InputPath; // For code injection
-        public string OutputPath;
-        public string PreBuildEvent;
-        public string PostBuildEvent;
+        public string InputPath = string.Empty; // For code injection
+        public string OutputPath = string.Empty;
+        public string PreBuildEvent = string.Empty;
+        public string PostBuildEvent = string.Empty;
         public bool AlwaysRunPostBuild;
         public bool ShowHiddenPaths;
-        public TestMovieBehavior TestMovieBehavior;
+        public TestMovieBehavior TestMovieBehavior = TestMovieBehavior.Default;
         public string TestMovieCommand;
 
         public event ChangedHandler ClasspathChanged; // inner operation changed the classpath
@@ -59,32 +51,21 @@ namespace ProjectManager.Projects
 
         public Project(string path, CompilerOptions compilerOptions)
         {
-            this.path = path;
-            this.compilerOptions = compilerOptions;
-
-            TestMovieBehavior = TestMovieBehavior.Default;
-
-            classpaths = new PathCollection();
-            compileTargets = new PathCollection();
-            hiddenPaths = new HiddenPathCollection();
-            libraryAssets = new AssetCollection(this);
-            storage = new Dictionary<string, string>();
-
-            InputPath = "";
-            OutputPath = "";
-            PreBuildEvent = "";
-            PostBuildEvent = "";
+            if (IsDirectory(path)) path = Path.Combine(path, "Project.folder");
+            ProjectPath = path;
+            CompilerOptions = compilerOptions;
+            LibraryAssets = new AssetCollection(this);
         }
 
         public abstract string Language { get; }
         public abstract string LanguageDisplayName { get; }
-        public virtual bool IsCompilable { get { return false; } }
-        public virtual bool ReadOnly { get { return false; } }
-        public virtual bool UsesInjection { get { return false; } }
-        public virtual bool HasLibraries { get { return false; } }
-        public virtual bool RequireLibrary { get { return false; } }
+        public virtual bool ReadOnly => IsFolderProject();
+        public virtual bool IsCompilable => false;
+        public virtual bool UsesInjection => false;
+        public virtual bool HasLibraries => false;
+        public virtual bool RequireLibrary => false;
         public virtual void ValidateBuild(out string error) { error = null; }
-        public virtual int MaxTargetsCount { get { return 0; } }
+        public virtual int MaxTargetsCount => 0;
         public abstract string DefaultSearchFilter { get; }
 
         public abstract void Save();
@@ -92,52 +73,45 @@ namespace ProjectManager.Projects
 
         protected bool AllowedSaving(string fileName)
         {
+            if (IsFolderProject()) return false;
             if (ReadOnly && fileName == ProjectPath) return false;
-            if (BeforeSave != null) return BeforeSave(this, fileName);
-            else return true;
+            var onBeforeSave = BeforeSave;
+            return onBeforeSave is null || onBeforeSave(this, fileName);
         }
 
-        public virtual void PropertiesChanged() 
-        {
-            OnClasspathChanged();
-        }
+        public bool IsFolderProject() => ProjectPath.EndsWith("Project.folder");
 
-        public virtual PropertiesDialog CreatePropertiesDialog()
-        {
-            return new PropertiesDialog();
-        }
+        public virtual void PropertiesChanged() => OnClasspathChanged();
+
+        public virtual PropertiesDialog CreatePropertiesDialog() => IsFolderProject() ? null : new PropertiesDialog();
 
         public void OnClasspathChanged()
         {
             absClasspaths = null;
-            if (ClasspathChanged != null) ClasspathChanged(this);
+            ClasspathChanged?.Invoke(this);
         }
 
         #region Simple Properties
 
-        public string ProjectPath { get { return path; } }
-        public virtual string Name { get { return Path.GetFileNameWithoutExtension(path); } }
-        public string Directory { get { return Path.GetDirectoryName(path); } }
-        public bool TraceEnabled { set { traceEnabled = value; } get { return traceEnabled; } }
-        public string TargetBuild { set { targetBuild = value; } get { return targetBuild; } }
-        public virtual bool EnableInteractiveDebugger { get { return movieOptions.DebuggerSupported(TargetBuild); } }
+        public string ProjectPath { get; }
+        public virtual string Name => Path.GetFileNameWithoutExtension(ProjectPath);
+        public string Directory => Path.GetDirectoryName(ProjectPath);
+        public bool TraceEnabled { set; get; }
+        public string TargetBuild { set; get; }
+        public virtual bool EnableInteractiveDebugger => movieOptions.DebuggerSupported(TargetBuild);
         public string[] AdditionalPaths; // temporary storage of resolved classpaths
         
         // we only provide getters for these to preserve the original pointer
-        public MovieOptions MovieOptions { get { return movieOptions; } }
-        public PathCollection Classpaths { get { return classpaths; } }
-        public PathCollection CompileTargets { get { return compileTargets; } }
-        public HiddenPathCollection HiddenPaths { get { return hiddenPaths; } }
-        public AssetCollection LibraryAssets { get { return libraryAssets; } }
-        public virtual String LibrarySWFPath { get { return OutputPath; } }
-        public Dictionary<string, string> Storage { get { return storage; } }
+        public MovieOptions MovieOptions => movieOptions;
+        public PathCollection Classpaths { get; } = new PathCollection();
+        public PathCollection CompileTargets { get; } = new PathCollection();
+        public HiddenPathCollection HiddenPaths { get; } = new HiddenPathCollection();
+        public AssetCollection LibraryAssets { get; }
+        public virtual string LibrarySWFPath => OutputPath;
+        public Dictionary<string, string> Storage => storage;
         public List<string> ExternalLibraries { get; } = new List<string>();
 
-        public CompilerOptions CompilerOptions
-        {
-            get { return compilerOptions; }
-            set { compilerOptions = value; }
-        }
+        public CompilerOptions CompilerOptions { get; set; }
 
         public PathCollection AbsoluteClasspaths
         {
@@ -145,27 +119,20 @@ namespace ProjectManager.Projects
             {
                 // property is accessed quite intensively, adding some caching here
                 if (absClasspaths != null) return absClasspaths;
-
-                PathCollection absolute = new PathCollection();
-                foreach (string cp in classpaths)
-                {
-                    absolute.Add(GetAbsolutePath(cp));
-                }
-                absClasspaths = absolute;
-                return absolute;
+                var result = new PathCollection();
+                result.AddRange(Classpaths.Select(GetAbsolutePath));
+                absClasspaths = result;
+                return result;
             }
         }
 
-        public string[] SourcePaths { get { return classpaths.ToArray(); } }
+        public string[] SourcePaths => Classpaths.ToArray();
 
-        public string OutputPathAbsolute 
-        {
-            get { return GetAbsolutePath(OutputPath); } 
-        }
+        public string OutputPathAbsolute => GetAbsolutePath(OutputPath);
 
         public string PreferredSDK
         {
-            get { return preferredSDK; }
+            get => preferredSDK;
             set
             {
                 preferredSDK = value;
@@ -175,14 +142,12 @@ namespace ProjectManager.Projects
 
         public string CurrentSDK
         {
-            get { return currentSDK; }
+            get => currentSDK;
             set
             {
-                if (value != currentSDK)
-                {
-                    currentSDK = value; 
-                    OnClasspathChanged();
-                }
+                if (value == currentSDK) return;
+                currentSDK = value; 
+                OnClasspathChanged();
             }
         }
 
@@ -199,23 +164,20 @@ namespace ProjectManager.Projects
 
             if (isHidden)
             {
-                hiddenPaths.Add(path);              
-                compileTargets.RemoveAtOrBelow(path); // can't compile hidden files
-                libraryAssets.RemoveAtOrBelow(path); // can't embed hidden resources
+                HiddenPaths.Add(path);              
+                CompileTargets.RemoveAtOrBelow(path); // can't compile hidden files
+                LibraryAssets.RemoveAtOrBelow(path); // can't embed hidden resources
             }
-            else hiddenPaths.Remove(path);
+            else HiddenPaths.Remove(path);
         }
 
-        public bool IsPathHidden(string path)
-        {
-            return hiddenPaths.IsHidden(GetRelativePath(path));
-        }
-        
+        public bool IsPathHidden(string path) => HiddenPaths.IsHidden(GetRelativePath(path));
+
         public virtual void SetCompileTarget(string path, bool isCompileTarget)
         {
             string relPath = Path.IsPathRooted(path) ? GetRelativePath(path) : path;
-            if (isCompileTarget) compileTargets.Add(relPath);
-            else compileTargets.Remove(relPath);
+            if (isCompileTarget) CompileTargets.Add(relPath);
+            else CompileTargets.Remove(relPath);
         }
 
         public virtual void SetDocumentClass(string path, bool isMain)
@@ -223,35 +185,37 @@ namespace ProjectManager.Projects
             // to be implemented
         }
 
-        public bool IsCompileTarget(string path) { return compileTargets.Contains(GetRelativePath(path)); }
+        public bool IsCompileTarget(string path) => CompileTargets.Contains(GetRelativePath(path));
 
-        public virtual bool IsDocumentClass(string path) { return false; }
+        public virtual bool IsDocumentClass(string path) => false;
 
-        public bool IsClassPath(string path) { return AbsoluteClasspaths.Contains(path); }
+        public bool IsClassPath(string path) => AbsoluteClasspaths.Contains(path);
 
         public virtual void SetLibraryAsset(string path, bool isLibraryAsset)
         {
             string relPath = Path.IsPathRooted(path) ? GetRelativePath(path) : path;
-            if (isLibraryAsset) libraryAssets.Add(relPath);
-            else libraryAssets.Remove(relPath);
+            if (isLibraryAsset) LibraryAssets.Add(relPath);
+            else LibraryAssets.Remove(relPath);
         }
 
-        public virtual bool IsLibraryAsset(string path) { return libraryAssets.Contains(GetRelativePath(path)); }
-        public virtual LibraryAsset GetAsset(string path) { return libraryAssets[GetRelativePath(path)]; }
+        public virtual bool IsLibraryAsset(string path) => LibraryAssets.Contains(GetRelativePath(path));
+
+        public virtual LibraryAsset GetAsset(string path) => LibraryAssets[GetRelativePath(path)];
 
         public virtual void ChangeAssetPath(string fromPath, string toPath)
         {
             if (IsLibraryAsset(fromPath))
             {
-                LibraryAsset asset = libraryAssets[GetRelativePath(fromPath)];
-                libraryAssets.Remove(asset);
+                LibraryAsset asset = LibraryAssets[GetRelativePath(fromPath)];
+                LibraryAssets.Remove(asset);
                 asset.Path = GetRelativePath(toPath);
-                libraryAssets.Add(asset);
+                LibraryAssets.Add(asset);
             }
         }
 
-        public bool IsInput(string path) { return GetRelativePath(path) == InputPath; }
-        public bool IsOutput(string path) { return GetRelativePath(path) == OutputPath; }
+        public bool IsInput(string path) => GetRelativePath(path) == InputPath;
+
+        public bool IsOutput(string path) => GetRelativePath(path) == OutputPath;
 
         /// <summary>
         /// Call this when you delete a path so we can remove all our references to it
@@ -259,9 +223,9 @@ namespace ProjectManager.Projects
         public void NotifyPathsDeleted(string path)
         {
             path = GetRelativePath(path);
-            hiddenPaths.Remove(path);
-            compileTargets.RemoveAtOrBelow(path);
-            libraryAssets.RemoveAtOrBelow(path);
+            HiddenPaths.Remove(path);
+            CompileTargets.RemoveAtOrBelow(path);
+            LibraryAssets.RemoveAtOrBelow(path);
         }
 
         /// <summary>
@@ -269,10 +233,10 @@ namespace ProjectManager.Projects
         /// </summary>
         public string GetObjDirectory()
         {
-            string objPath = Path.Combine(this.Directory, "obj");
-            if (!System.IO.Directory.Exists(objPath))
-                System.IO.Directory.CreateDirectory(objPath);
-            return objPath;
+            var result = Path.Combine(Directory, "obj");
+            if (!System.IO.Directory.Exists(result))
+                System.IO.Directory.CreateDirectory(result);
+            return result;
         }
 
         /// <summary>
@@ -317,29 +281,23 @@ namespace ProjectManager.Projects
 
         #region Path Helpers
 
-        public String[] GetHiddenPaths()
-        {
-            return this.hiddenPaths.ToArray();
-        }
+        public string[] GetHiddenPaths() => HiddenPaths.ToArray();
 
-        public string GetRelativePath(string path)
-        {
-            return ProjectPaths.GetRelativePath(this.Directory, path);
-        }
+        public string GetRelativePath(string path) => ProjectPaths.GetRelativePath(Directory, path);
 
         public void UpdateVars(bool silent)
         {
-            if (!silent && ProjectUpdating != null) ProjectUpdating(this);
+            if (!silent) ProjectUpdating?.Invoke(this);
             vars = new BuildEventVars(this).GetVars();
         }
 
         public string GetAbsolutePath(string path)
         {
             path = Environment.ExpandEnvironmentVariables(path);
-            if (vars != null && path.IndexOf('$') >= 0)
-                foreach (BuildEventInfo arg in vars) 
+            if (vars != null && path.Contains('$'))
+                foreach (var arg in vars) 
                     path = path.Replace(arg.FormattedName, arg.Value);
-            return ProjectPaths.GetAbsolutePath(this.Directory, path);
+            return ProjectPaths.GetAbsolutePath(Directory, path);
         }
 
         /// <summary>
@@ -347,38 +305,29 @@ namespace ProjectManager.Projects
         /// Pattern: ([a-zA-Z0-9])[-_.]debug([\\/.])
         /// </summary>
         public string FixDebugReleasePath(string path)
-        {
-            if (!TraceEnabled)
-                return Regex.Replace(path, @"([a-zA-Z0-9])[-_.]debug([\\/.])", "$1$2");
-            else
-                return path;
-        }
+            => TraceEnabled
+                ? path
+                : Regex.Replace(path, @"([a-zA-Z0-9])[-_.]debug([\\/.])", "$1$2");
 
         /// <summary>
         /// Replace accented characters and remove whitespace
         /// </summary>
-        public static String RemoveDiacritics(String s)
+        public static string RemoveDiacritics(string s)
         {
-            String normalizedString = s.Normalize(NormalizationForm.FormD);
-            StringBuilder stringBuilder = new StringBuilder();
-
-            for (int i = 0; i < normalizedString.Length; i++)
+            var normalizedString = s.Normalize(NormalizationForm.FormD);
+            var stringBuilder = new StringBuilder();
+            foreach (var c in normalizedString)
             {
-                Char c = normalizedString[i];
                 if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
                     stringBuilder.Append(c);
             }
-
             return stringBuilder.ToString();
         }
 
         #endregion
 
 
-        public bool IsDirectory(string path)
-        {
-            return System.IO.Directory.Exists(path);
-        }
+        public bool IsDirectory(string path) => System.IO.Directory.Exists(path);
     }
 
     public enum OutputType

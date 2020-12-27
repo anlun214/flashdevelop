@@ -3,6 +3,7 @@ using System.Linq;
 using ASCompletion.Completion;
 using ASCompletion.Context;
 using ASCompletion.Model;
+using HaXeContext.Model;
 using HaXeContext.TestUtils;
 using NSubstitute;
 using NUnit.Framework;
@@ -17,7 +18,7 @@ namespace HaXeContext
 
         static string GetFullPath(string fileName) => $"{nameof(HaXeContext)}.Test_Files.parser.{fileName}.hx";
 
-        [TestFixtureSetUp]
+        [OneTimeSetUp]
         public void ContextTestsSetUp() => SetHaxeFeatures(sci);
 
         static IEnumerable<TestCaseData> DecomposeTypesTestCases
@@ -25,47 +26,37 @@ namespace HaXeContext
             get
             {
                 yield return new TestCaseData(new List<string> {"haxe.Timer->Type.ValueType"})
-                    .SetName("haxe.Timer->Type.ValueType")
                     .Returns(new[] {"haxe.Timer", "Type.ValueType"});
                 yield return new TestCaseData(new List<string> {"{t:haxe.Timer, v:Type.ValueType}"})
-                    .SetName("{t:haxe.Timer, v:Type.ValueType}")
                     .Returns(new[] {"haxe.Timer", "Type.ValueType"});
                 yield return new TestCaseData(new List<string> {"{t:haxe.Timer}->Type.ValueType"})
-                    .SetName("{t:haxe.Timer}->Type.ValueType")
                     .Returns(new[] {"haxe.Timer", "Type.ValueType"});
                 yield return new TestCaseData(new List<string> {"{t:haxe.Timer->Type.ValueType}"})
-                    .SetName("{t:haxe.Timer->Type.ValueType}")
                     .Returns(new[] {"haxe.Timer", "Type.ValueType"});
                 yield return new TestCaseData(new List<string> {"{t:haxe.Timer->Type.ValueType->haxe.ds.Vector<Int>}"})
-                    .SetName("{t:haxe.Timer->Type.ValueType->haxe.ds.Vector<Int>}")
                     .Returns(new[] {"haxe.Timer", "Type.ValueType", "haxe.ds.Vector", "Int"});
                 yield return new TestCaseData(new List<string> {"{t:haxe.Timer->Type.ValueType}->haxe.ds.Vector<Int>"})
-                    .SetName("{t:haxe.Timer->Type.ValueType}->haxe.ds.Vector<Int>")
                     .Returns(new[] {"haxe.Timer", "Type.ValueType", "haxe.ds.Vector", "Int"});
                 yield return new TestCaseData(new List<string> {"haxe.Timer->Type.ValueType->{v:haxe.ds.Vector<Int>}"})
-                    .SetName("haxe.Timer->Type.ValueType->{v:haxe.ds.Vector<Int>}")
                     .Returns(new[] {"haxe.Timer", "Type.ValueType", "haxe.ds.Vector", "Int"});
                 yield return new TestCaseData(new List<string> {"haxe.Timer->haxe.Timer"})
-                    .SetName("haxe.Timer->haxe.Timer")
                     .Returns(new[] {"haxe.Timer"});
                 yield return new TestCaseData(new List<string> {"haxe.ds.Vector<{c:haxe.Timer->Type.ValueType}>"})
-                    .SetName("haxe.ds.Vector<{c:haxe.Timer->Type.ValueType}>")
                     .Returns(new[] {"haxe.ds.Vector", "haxe.Timer", "Type.ValueType"});
                 yield return new TestCaseData(new List<string> {"Array<Int>->Map<String, Int>->haxe.ds.Vector<{c:haxe.Timer->Type.ValueType}>"})
-                    .SetName("Array<Int>->Map<String, Int>->haxe.ds.Vector<{c:haxe.Timer->Type.ValueType}>")
                     .Returns(new[] {"Array", "Int", "Map", "String", "haxe.ds.Vector", "haxe.Timer", "Type.ValueType"});
                 yield return new TestCaseData(new List<string> {"Array<Array<Map<haxe.ds.Vector<haxe.Timer>, Type.ValueType>>>"})
-                    .SetName("Array<Array<Map<haxe.ds.Vector<haxe.Timer>, Type.ValueType>>>")
                     .Returns(new[] {"Array", "Map", "haxe.ds.Vector", "haxe.Timer", "Type.ValueType"});
                 yield return new TestCaseData(new List<string> {"Array<Array<Map<haxe.ds.Vector<haxe.Timer>,Type.ValueType>>>"})
-                    .SetName("Array<Array<Map<haxe.ds.Vector<haxe.Timer>,Type.ValueType>>>")
                     .Returns(new[] {"Array", "Map", "haxe.ds.Vector", "haxe.Timer", "Type.ValueType"});
                 yield return new TestCaseData(new List<string> {"Array<Array<Map<haxe.ds.Vector<{t:haxe.Timer}>, Type.ValueType>>>"})
-                    .SetName("Array<Array<Map<haxe.ds.Vector<{t:haxe.Timer}>, Type.ValueType>>>")
                     .Returns(new[] {"Array", "Map", "haxe.ds.Vector", "haxe.Timer", "Type.ValueType"});
                 yield return new TestCaseData(new List<string> {"Array<Array<Map<haxe.ds.Vector<{t:haxe.Timer}>->Type.ValueType, Int>>>"})
-                    .SetName("Array<Array<Map<haxe.ds.Vector<{t:haxe.Timer}>->Type.ValueType, Int>>>")
                     .Returns(new[] {"Array", "Map", "haxe.ds.Vector", "haxe.Timer", "Type.ValueType", "Int"});
+                yield return new TestCaseData(new List<string> {"Dynamic->PosInfos->Void"})
+                    .Returns(new[] {"Dynamic", "PosInfos", "Void"});
+                yield return new TestCaseData(new List<string> {"Dynamic->(Dynamic->PosInfos)->Void"})
+                    .Returns(new[] {"Dynamic", "PosInfos", "Void"});
             }
         }
 
@@ -127,7 +118,7 @@ namespace HaXeContext
             var mix = new MemberList();
             var expr = ASComplete.GetExpressionType(sci, sci.CurrentPos);
             ASContext.Context.ResolveDotContext(sci, expr, mix);
-            Assert.AreEqual(code, mix.Items.FirstOrDefault());
+            Assert.AreEqual(code, mix.FirstOrDefault());
         }
 
         static IEnumerable<TestCaseData> ResolveDotContextIssue2467TestCases
@@ -301,6 +292,50 @@ namespace HaXeContext
             return ASContext.Context.ResolveToken(token, null);
         }
 
+        static IEnumerable<TestCaseData> ResolveTypeIssue2779TestCases
+        {
+            get
+            {
+                yield return new TestCaseData("{x:Int}", "4.0.0")
+                    .Returns(new MemberList
+                    {
+                        new MemberModel("x", "Int", FlagType.Access | FlagType.Dynamic | FlagType.Variable, Visibility.Public),
+                    })
+                    .SetName("{x:Int}. Issue 2779. Case 1")
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2779");
+                yield return new TestCaseData("{x:Map<String, Int>}", "4.0.0")
+                    .Returns(new MemberList
+                    {
+                        new MemberModel("x", "Map<String, Int>", FlagType.Access | FlagType.Dynamic | FlagType.Variable, Visibility.Public),
+                    })
+                    .SetName("{x:Map<String, Int>}. Issue 2779. Case 2")
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2779");
+                yield return new TestCaseData("{x:Map<String, Int>}", "4.0.0")
+                    .Returns(new MemberList
+                    {
+                        new MemberModel("x", "Map<String, Int>", FlagType.Access | FlagType.Dynamic | FlagType.Variable, Visibility.Public),
+                    })
+                    .SetName("{x:Map<String, Int>}. Issue 2779. Case 2")
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2779");
+                yield return new TestCaseData("{x:Map<String, Int>, y:String}", "4.0.0")
+                    .Returns(new MemberList
+                    {
+                        new MemberModel("x", "Map<String, Int>", FlagType.Access | FlagType.Dynamic | FlagType.Variable, Visibility.Public),
+                        new MemberModel("y", "String", FlagType.Access | FlagType.Dynamic | FlagType.Variable, Visibility.Public),
+                    })
+                    .SetName("{x:Map<String, Int>, y:String}. Issue 2779. Case 2")
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2779");
+            }
+        }
+
+        [Test, TestCaseSource(nameof(ResolveTypeIssue2779TestCases))]
+        public List<MemberModel> ResolveAnonymousType(string sourceText, string sdkVersion)
+        {
+            ASContext.Context.Settings.InstalledSDKs = new[] {new InstalledSDK {Path = PluginBase.CurrentProject.CurrentSDK, Version = sdkVersion}};
+            var result = ASContext.Context.ResolveType(sourceText, null);
+            return result.Members.Items;
+        }
+
         static IEnumerable<TestCaseData> GetTopLevelElementsTestCases
         {
             get
@@ -308,7 +343,7 @@ namespace HaXeContext
                 yield return new TestCaseData("GetTopLevelElements_1", new MemberModel("Foo", string.Empty, FlagType.Enum | FlagType.Static | FlagType.Variable, Visibility.Public))
                     .Returns(true)
                     .SetName("Case 1. enum");
-                yield return new TestCaseData("GetTopLevelElements_2", new MemberModel("Foo", string.Empty, FlagType.Enum | FlagType.Static | FlagType.Variable, Visibility.Public))
+                yield return new TestCaseData("GetTopLevelElements_2", new MemberModel("Foo", string.Empty, FlagType.Enum | FlagType.Static | (FlagType) HaxeFlagType.Inline | FlagType.Variable, Visibility.Public))
                     .Returns(true)
                     .SetName("Case 2. @:enum abstract");
                 yield return new TestCaseData("GetTopLevelElements_3", new MemberModel("toString", string.Empty, FlagType.Function, Visibility.Public))
@@ -335,7 +370,7 @@ namespace HaXeContext
                 yield return new TestCaseData("ResolveTopLevelElement_enum")
                     .Returns(new MemberModel("EFoo", "Foo", FlagType.Enum | FlagType.Static | FlagType.Variable, Visibility.Public));
                 yield return new TestCaseData("ResolveTopLevelElement_abstract")
-                    .Returns(new MemberModel("EFoo", "Foo", FlagType.Enum | FlagType.Static | FlagType.Variable, Visibility.Public));
+                    .Returns(new MemberModel("EFoo", "Foo", FlagType.Enum | FlagType.Static | (FlagType) HaxeFlagType.Inline | FlagType.Variable, Visibility.Public));
             }
         }
 
@@ -412,11 +447,89 @@ namespace HaXeContext
                 return context.ResolveImports(it.ArgAt<FileModel>(0));
             });
             var type = ASContext.Context.ResolveType(fromClass, ASContext.Context.CurrentModel);
-            var expectedImports = type.Members.Items.Where(it => (it.Flags & FlagType.Static) != 0 && (it.Access & Visibility.Public) != 0).ToList();
+            var expectedImports = type.Members.Where(it => (it.Flags & FlagType.Static) != 0 && (it.Access & Visibility.Public) != 0).ToList();
             var actualImports = ASContext.Context.ResolveImports(context.CurrentModel);
             expectedImports.Sort();
             actualImports.Sort();
             Assert.AreEqual(expectedImports, actualImports.Items);
+        }
+
+        static IEnumerable<TestCaseData> BraceMatchIssue2855
+        {
+            get
+            {
+                yield return new TestCaseData("a >>$(EntryPoint) b. Issue 2855. Case 1")
+                    .Returns(-1)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("a >$(EntryPoint)> b. Issue 2855. Case 2")
+                    .Returns(-1)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("a <<$(EntryPoint) b. Issue 2855. Case 3")
+                    .Returns(-1)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("a <$(EntryPoint)< b. Issue 2855. Case 4")
+                    .Returns(-1)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("new Array<Int$(EntryPoint)>. Issue 2855. Case 5")
+                    .Returns("new Array".Length)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("new Array<Array<Int>$(EntryPoint)>. Issue 2855. Case 6")
+                    .Returns("new Array".Length)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("new Array<Array<Int->Int$(EntryPoint)>>. Issue 2855. Case 7")
+                    .Returns("new Array<Array".Length)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("new Array<Array<{x:Array<Int>}->Int$(EntryPoint)>>. Issue 2855. Case 8")
+                    .Returns("new Array<Array".Length)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("<\"<$(EntryPoint)>\">. Issue 2855. Case 9")
+                    .Returns(-1)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("/*<$(EntryPoint)>*/. Issue 2855. Case 10")
+                    .Returns(-1)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("//<$(EntryPoint)>. Issue 2855. Case 11")
+                    .Returns(-1)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("Array<Int->$(EntryPoint)>. Issue 2855. Case 12")
+                    .Returns("Array".Length)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("Array<((Int->Int)->String)$(EntryPoint)>. Issue 2855. Case 13")
+                    .Returns("Array".Length)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("var v = 1;)$(EntryPoint)>. Issue 2855. Case 14")
+                    .Returns(-1)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("var v = 1;Int->}$(EntryPoint)>. Issue 2855. Case 15")
+                    .Returns(-1)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("<$(EntryPoint){Int-. Issue 2855. Case 16")
+                    .Returns(-1)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("<$(EntryPoint){Int->;. Issue 2855. Case 17")
+                    .Returns(-1)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("new Map<Int, Int$(EntryPoint)>. Issue 2855. Case 18")
+                    .Returns("new Map".Length)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("new Map$(EntryPoint)<Int, Int>. Issue 2855. Case 19")
+                    .Returns("new Map<Int, Int".Length)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("new Array$(EntryPoint)<Int->?String>. Issue 2855. Case 20")
+                    .Returns("new Array<Int->?String".Length)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+                yield return new TestCaseData("new Array<Int->?String$(EntryPoint)>. Issue 2855. Case 21")
+                    .Returns("new Array".Length)
+                    .SetDescription("https://github.com/fdorg/flashdevelop/issues/2855");
+            }
+        }
+
+        [Test, TestCaseSource(nameof(BraceMatchIssue2855))]
+        public int BraceMatch(string sourceText)
+        {
+            SetSrc(sci, sourceText);
+            var result = ((Context)ASContext.GetLanguageContext("haxe")).BraceMatch(sci, sci.CurrentPos);
+            return result;
         }
     }
 }

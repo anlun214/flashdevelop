@@ -97,24 +97,30 @@ namespace Ude.Core
                             detectedCharset = "UTF-8";
                         break;
                     case 0xFE:
-                        if (0xFF == buf[1] && 0x00 == buf[2] && 0x00 == buf[3])
+                        detectedCharset = buf[1] switch
+                        {
                             // FE FF 00 00  UCS-4, unusual octet order BOM (3412)
-                            detectedCharset = "X-ISO-10646-UCS-4-3412";
-                        else if (0xFF == buf[1])
-                            detectedCharset = "UTF-16BE";
+                            0xFF when 0x00 == buf[2] && 0x00 == buf[3] => "X-ISO-10646-UCS-4-3412",
+                            0xFF => "UTF-16BE",
+                            _ => detectedCharset
+                        };
                         break;
                     case 0x00:
-                        if (0x00 == buf[1] && 0xFE == buf[2] && 0xFF == buf[3])
-                            detectedCharset = "UTF-32BE";
-                        else if (0x00 == buf[1] && 0xFF == buf[2] && 0xFE == buf[3])
+                        detectedCharset = buf[1] switch
+                        {
+                            0x00 when 0xFE == buf[2] && 0xFF == buf[3] => "UTF-32BE",
                             // 00 00 FF FE  UCS-4, unusual octet order BOM (2143)
-                            detectedCharset = "X-ISO-10646-UCS-4-2143";
+                            0x00 when 0xFF == buf[2] && 0xFE == buf[3] => "X-ISO-10646-UCS-4-2143",
+                            _ => detectedCharset
+                        };
                         break;
                     case 0xFF:
-                        if (0xFE == buf[1] && 0x00 == buf[2] && 0x00 == buf[3])
-                            detectedCharset = "UTF-32LE";
-                        else if (0xFE == buf[1])
-                            detectedCharset = "UTF-16LE";
+                        detectedCharset = buf[1] switch
+                        {
+                            0xFE when 0x00 == buf[2] && 0x00 == buf[3] => "UTF-32LE",
+                            0xFE => "UTF-16LE",
+                            _ => detectedCharset
+                        };
                         break;
                     }  // switch
                 }
@@ -138,11 +144,11 @@ namespace Ude.Core
                         }
 
                         // start multibyte and singlebyte charset prober
-                        if (charsetProbers[0] == null)
+                        if (charsetProbers[0] is null)
                             charsetProbers[0] = new MBCSGroupProber();
-                        if (charsetProbers[1] == null)
+                        if (charsetProbers[1] is null)
                             charsetProbers[1] = new SBCSGroupProber();
-                        if (charsetProbers[2] == null)
+                        if (charsetProbers[2] is null)
                             charsetProbers[2] = new Latin1Prober(); 
                     }
                 } else { 
@@ -159,7 +165,7 @@ namespace Ude.Core
             
             switch (inputState) {
                 case InputState.EscASCII:
-                    if (escCharsetProber == null) {
+                    if (escCharsetProber is null) {
                         escCharsetProber = new EscCharsetProber();
                     }
                     st = escCharsetProber.HandleData(buf, offset, len);
@@ -244,8 +250,7 @@ namespace Ude.Core
             bestGuess = -1;
             inputState = InputState.PureASCII;
             lastChar = 0x00;
-            if (escCharsetProber != null)
-                escCharsetProber.Reset();
+            escCharsetProber?.Reset();
             for (int i = 0; i < PROBERS_NUM; i++)
                 if (charsetProbers[i] != null)
                     charsetProbers[i].Reset();

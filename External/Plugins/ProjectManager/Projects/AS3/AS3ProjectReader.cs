@@ -7,18 +7,11 @@ namespace ProjectManager.Projects.AS3
 {
     public class AS3ProjectReader : ProjectReader
     {
-        AS3Project project;
+        readonly AS3Project project;
 
-        public AS3ProjectReader(string filename)
-            : base(filename, new AS3Project(filename))
-        {
-            this.project = base.Project as AS3Project;
-        }
+        public AS3ProjectReader(string filename) : base(filename, new AS3Project(filename)) => project = Project as AS3Project;
 
-        public new AS3Project ReadProject()
-        {
-            return base.ReadProject() as AS3Project;
-        }
+        public new AS3Project ReadProject() => base.ReadProject() as AS3Project;
 
         protected override void PostProcess()
         {
@@ -28,20 +21,21 @@ namespace ProjectManager.Projects.AS3
             // import FD3 project
             if (project.MovieOptions.MajorVersion > 10)
             {
+                // TODO slavara: actualize for last FP
                 project.MovieOptions.MajorVersion = 10;
                 project.MovieOptions.MinorVersion = 1;
             }
 
-            bool isAIR = project.MovieOptions.Platform.IndexOf("AIR", StringComparison.Ordinal) >= 0;
+            bool isAIR = project.MovieOptions.Platform.Contains("AIR");
             if (project.CompilerOptions.Additional != null)
             {
-                string add = String.Join("\n", project.CompilerOptions.Additional).Trim().Replace("\n\n", "\n");
-                bool airdef = add.IndexOf("configname=air", StringComparison.Ordinal) >= 0;
-                if (!isAIR && airdef)
+                string add = string.Join("\n", project.CompilerOptions.Additional).Trim().Replace("\n\n", "\n");
+                if (!isAIR && add.Contains("configname=air"))
                 {
                     add = Regex.Replace(add, "(\\+)?configname=air", "");
                     project.CompilerOptions.Additional = add.Trim().Replace("\n\n", "\n").Split('\n');
                     project.MovieOptions.Platform = "AIR";
+                    // TODO slavara: actualize for last AIR
                     project.MovieOptions.MajorVersion = 2;
                     project.MovieOptions.MinorVersion = 0;
                     project.Save();
@@ -53,65 +47,43 @@ namespace ProjectManager.Projects.AS3
         protected override void ProcessNode(string name)
         {
             if (NodeType == XmlNodeType.Element)
-            switch (name)
-            {
-                case "build": ReadBuildOptions(); break;
-                case "library": ReadLibraryAssets(); break;
-                case "includeLibraries": ReadIncludeLibraries(); break;
-                case "libraryPaths": ReadLibrayPath(); break;
-                case "externalLibraryPaths": ReadExternalLibraryPaths(); break;
-                case "rslPaths": ReadRSLPaths(); break;
-                case "intrinsics": ReadIntrinsicPaths(); break;
-                default: base.ProcessNode(name); break;
-            }
+                switch (name)
+                {
+                    case "build": ReadBuildOptions(); break;
+                    case "library": ReadLibraryAssets(); break;
+                    case "includeLibraries": ReadIncludeLibraries(); break;
+                    case "libraryPaths": ReadLibrayPath(); break;
+                    case "externalLibraryPaths": ReadExternalLibraryPaths(); break;
+                    case "rslPaths": ReadRSLPaths(); break;
+                    case "intrinsics": ReadIntrinsicPaths(); break;
+                    default: base.ProcessNode(name); break;
+                }
         }
 
-        private void ReadIntrinsicPaths()
-        {
-            project.CompilerOptions.IntrinsicPaths = ReadLibrary("intrinsics", SwfAssetMode.Ignore);
-        }
+        void ReadIntrinsicPaths() => project.CompilerOptions.IntrinsicPaths = ReadLibrary("intrinsics", SwfAssetMode.Ignore);
 
-        private void ReadRSLPaths()
-        {
-            project.CompilerOptions.RSLPaths = ReadLibrary("rslPaths", SwfAssetMode.Ignore);
-        }
+        void ReadRSLPaths() => project.CompilerOptions.RSLPaths = ReadLibrary("rslPaths", SwfAssetMode.Ignore);
 
-        private void ReadExternalLibraryPaths()
-        {
-            project.CompilerOptions.ExternalLibraryPaths = ReadLibrary("externalLibraryPaths", SwfAssetMode.ExternalLibrary);
-        }
+        void ReadExternalLibraryPaths() => project.CompilerOptions.ExternalLibraryPaths = ReadLibrary("externalLibraryPaths", SwfAssetMode.ExternalLibrary);
 
-        private void ReadLibrayPath()
-        {
-            project.CompilerOptions.LibraryPaths = ReadLibrary("libraryPaths", SwfAssetMode.Library);
-        }
+        void ReadLibrayPath() => project.CompilerOptions.LibraryPaths = ReadLibrary("libraryPaths", SwfAssetMode.Library);
 
-        private void ReadIncludeLibraries()
-        {
-            project.CompilerOptions.IncludeLibraries = ReadLibrary("includeLibraries", SwfAssetMode.IncludedLibrary);
-        }
+        void ReadIncludeLibraries() => project.CompilerOptions.IncludeLibraries = ReadLibrary("includeLibraries", SwfAssetMode.IncludedLibrary);
 
-        private string[] ReadLibrary(string name, SwfAssetMode mode)
+        string[] ReadLibrary(string name, SwfAssetMode mode)
         {
             ReadStartElement(name);
-            List<string> elements = new List<string>();
+            var elements = new List<string>();
             while (Name == "element")
             {
-                string path = OSPath(GetAttribute("path"));
+                var path = OSPath(GetAttribute("path"));
                 elements.Add(path);
-
                 if (mode != SwfAssetMode.Ignore)
-                {
-                    LibraryAsset asset = new LibraryAsset(project, path);
-                    asset.SwfMode = mode;
-                    project.SwcLibraries.Add(asset);
-                }
+                    project.SwcLibraries.Add(new LibraryAsset(project, path) {SwfMode = mode});
                 Read();
             }
             ReadEndElement();
-            string[] result = new string[elements.Count];
-            elements.CopyTo(result);
-            return result;
+            return elements.ToArray();
         }
 
         public void ReadLibraryAssets()
@@ -121,7 +93,7 @@ namespace ProjectManager.Projects.AS3
             {
                 string path = OSPath(GetAttribute("path"));
 
-                if (path == null)
+                if (path is null)
                     throw new Exception("All library assets must have a 'path' attribute.");
 
                 LibraryAsset asset = new LibraryAsset(project, path);
@@ -179,7 +151,7 @@ namespace ProjectManager.Projects.AS3
             ReadEndElement();
         }
 
-        private MxmlNamespace[] ReadNamespaces()
+        MxmlNamespace[] ReadNamespaces()
         {
             var data = Value.Split('\n');
             int entriesNo = data.Length;

@@ -10,6 +10,7 @@ using FlashDevelop;
 using NSubstitute;
 using NUnit.Framework;
 using PluginCore;
+using PluginCore.Controls;
 using PluginCore.Helpers;
 using ScintillaNet;
 using ScintillaNet.Enums;
@@ -19,13 +20,13 @@ namespace ASCompletion
     public class ASCompletionTests
     {
 #pragma warning disable CS0436 // Type conflicts with imported type
-        private MainForm mainForm;
+        MainForm mainForm;
 #pragma warning restore CS0436 // Type conflicts with imported type
-        private ISettings settings;
-        private ITabbedDocument doc;
+        ISettings settings;
+        ITabbedDocument doc;
         protected ScintillaControl sci;
 
-        [TestFixtureSetUp]
+        [OneTimeSetUp]
         public void FixtureSetUp()
         {
 #pragma warning disable CS0436 // Type conflicts with imported type
@@ -56,9 +57,10 @@ namespace ASCompletion
 
             sci = GetBaseScintillaControl();
             doc.SciControl.Returns(sci);
+            CompletionList.CreateControl(PluginBase.MainForm);
         }
 
-        [TestFixtureTearDown]
+        [OneTimeTearDown]
         public void FixtureTearDown()
         {
             settings = null;
@@ -67,20 +69,17 @@ namespace ASCompletion
             mainForm = null;
         }
 
-        private ScintillaControl GetBaseScintillaControl()
+        ScintillaControl GetBaseScintillaControl() => new ScintillaControl
         {
-            return new ScintillaControl
-            {
-                Encoding = System.Text.Encoding.UTF8,
-                CodePage = 65001,
-                Indent = settings.IndentSize,
-                Lexer = 3,
-                StyleBits = 7,
-                IsTabIndents = settings.TabIndents,
-                IsUseTabs = settings.UseTabs,
-                TabWidth = settings.TabWidth
-            };
-        }
+            Encoding = System.Text.Encoding.UTF8,
+            CodePage = 65001,
+            Indent = settings.IndentSize,
+            Lexer = 3,
+            StyleBits = 7,
+            IsTabIndents = settings.TabIndents,
+            IsUseTabs = settings.UseTabs,
+            TabWidth = settings.TabWidth
+        };
 
         protected static void SetAs3Features(ScintillaControl sci)
         {
@@ -119,10 +118,6 @@ namespace ASCompletion
 
 public static class CollectionExtensions
 {
-    public static MemberModel FirstOrDefault(this MemberList list, int line) => list.Items.FirstOrDefault(line);
-
     public static TSource FirstOrDefault<TSource>(this IEnumerable<TSource> items, int line) where TSource : MemberModel
-    {
-        return items.FirstOrDefault(it => it.LineFrom <= line && it.LineTo >= line);
-    }
+        => items.FirstOrDefault(it => it.LineFrom <= line && it.LineTo >= line);
 }

@@ -1,5 +1,4 @@
-﻿using System;
-using System.Text;
+﻿using System.Text;
 
 /**
  * Credit: http://www.ko-sw.com/Blog/post/An-Ultra-Fast-CSS-Minify-Algorithm.aspx
@@ -72,7 +71,7 @@ namespace CssCompletion
                 if (aPrevState == CssState.Punctuation && i > 0
                     && theCss[aPrevPos] == '}' && theCss[i] != '}')
                 {
-                    if (Char.IsDigit(theCss[i])) aRet.Append(' ');
+                    if (char.IsDigit(theCss[i])) aRet.Append(' ');
                     else aRet.Append('\n'); // keep blocks on new lines
                 }
 
@@ -112,7 +111,7 @@ namespace CssCompletion
         /// <param name="theCurState">The current CSS parsing state.</param>
         /// 
         /// <returns>The future CSS parsing state.</returns>
-        private static CssState GetState(string theCss, ref int thePos, CssState theCurState)
+        static CssState GetState(string theCss, ref int thePos, CssState theCurState)
         {
             int aLen = theCss.Length;
             int i = thePos;
@@ -129,10 +128,11 @@ namespace CssCompletion
                     // Enforce a whitespace afterwards
                     return CssState.Token;
                 }
-                else
-                    return CssState.StringD;
+
+                return CssState.StringD;
             }
-            else if (theCurState == CssState.StringS)
+
+            if (theCurState == CssState.StringS)
             {
                 if(theCss[i] == '\'')
                 {
@@ -144,8 +144,8 @@ namespace CssCompletion
                     // Enforce a whitespace afterwards
                     return CssState.Token;
                 }
-                else
-                    return CssState.StringS;
+
+                return CssState.StringS;
             }
 
 
@@ -184,38 +184,26 @@ namespace CssCompletion
             if (IsTokenChar(c))
                 return CssState.Token;
 
-            else if (c == '\"')
-                return CssState.StringD;
-
-            else if (c == '\'')
-                return CssState.StringS;
-
-            else
-                return CssState.Punctuation;
+            return c switch
+            {
+                '\"' => CssState.StringD,
+                '\'' => CssState.StringS,
+                _ => CssState.Punctuation
+            };
         }
 
-        private static bool IsWhitespaceChar(char p)
+        static bool IsWhitespaceChar(char p) => p == '\t' || p == '\r' || p == '\n' || p == ' ';
+
+        static bool IsTokenChar(char theChar)
         {
-            return p == '\t' || p == '\r' || p == '\n' || p == ' ';
-        }
-
-        private static bool IsTokenChar(char theChar)
-        {
-            if(theChar >= 'a' && theChar <= 'z')
-                return true;
-
-            else if (theChar >= '0' && theChar <= '9')
-                return true;
-
-            else if(theChar >= 'A' && theChar <= 'Z')
-                return true;
-
-            else if ( AdditionalTokenChars.IndexOf(theChar) >= 0 )
-                return true;
-
-            else
-                return false;
+            switch (theChar)
+            {
+                case >= 'a' and <= 'z':
+                case >= '0' and <= '9':
+                case >= 'A' and <= 'Z':
+                    return true;
+            }
+            return AdditionalTokenChars.IndexOf(theChar) >= 0;
         }
     }
-
 }

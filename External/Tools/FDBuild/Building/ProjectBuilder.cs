@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Reflection;
 using FDBuild.Building.AS3;
 using ProjectManager.Projects;
 using ProjectManager.Projects.AS2;
@@ -16,51 +15,37 @@ namespace ProjectManager.Building
 {
     public abstract class ProjectBuilder
     {
-        Project project;
-        string compilerPath;
+        readonly Project project;
 
-        public string CompilerPath
-        {
-            get { return compilerPath; }
-            set { compilerPath = value; }
-        }
+        public string CompilerPath { get; set; }
 
         public ProjectBuilder(Project project, string compilerPath)
         {
             this.project = project;
-            this.compilerPath = compilerPath;
+            CompilerPath = compilerPath;
         }
 
         public static ProjectBuilder Create(Project project, string ipcName, string compilerPath)
         {
-            if (project is AS2Project) return new AS2ProjectBuilder(project as AS2Project, compilerPath);
-            if (project is AS3Project)
+            return project switch
             {
-                if (Directory.Exists(Path.Combine(compilerPath, "js"))) return new FlexJSProjectBuilder((AS3Project) project, compilerPath);
-                return new AS3ProjectBuilder(project as AS3Project, compilerPath, ipcName);
-            }
-            if (project is HaxeProject) return new HaxeProjectBuilder(project as HaxeProject, compilerPath);
-            if (project is GenericProject) return new GenericProjectBuilder(project as GenericProject, compilerPath);
-            throw new Exception("FDBuild doesn't know how to build " + project.GetType().Name);
+                AS2Project as2Project => new AS2ProjectBuilder(as2Project, compilerPath),
+                AS3Project as3Project when Directory.Exists(Path.Combine(compilerPath, "js")) =>
+                    new FlexJSProjectBuilder(as3Project, compilerPath),
+                AS3Project as3Project => new AS3ProjectBuilder(as3Project, compilerPath, ipcName),
+                HaxeProject haxeProject => new HaxeProjectBuilder(haxeProject, compilerPath),
+                GenericProject genericProject => new GenericProjectBuilder(genericProject, compilerPath),
+                _ => throw new Exception("FDBuild doesn't know how to build " + project.GetType().Name)
+            };
         }
 
-        protected string FDBuildDirectory
-        {
-            get
-            {
-                string url = Assembly.GetEntryAssembly().GetName().CodeBase;
-                Uri uri = new Uri(url);
-                return Path.GetDirectoryName(uri.LocalPath);
-            }
-        }
+        protected string FDBuildDirectory => ProjectPaths.ApplicationDirectory;
 
         public void Build(string[] extraClasspaths, bool debugMode, bool noPreBuild, bool noPostBuild)
         {
             Console.WriteLine("Building " + project.Name);
-
-            BuildEventRunner runner = new BuildEventRunner(project, compilerPath);
-            bool attempedPostBuildEvent = false;
-
+            var runner = new BuildEventRunner(project, CompilerPath);
+            var attempedPostBuildEvent = false;
             try
             {
                 if (!noPreBuild && project.PreBuildEvent.Length > 0)
@@ -88,14 +73,10 @@ namespace ProjectManager.Building
                     runner.Run(project.PostBuildEvent, debugMode);
                 }
             }
-
             Console.WriteLine("Build succeeded");
         }
 
-        public void BuildCommand(string[] extraClasspaths, bool noTrace)
-        {
-            DoBuild(extraClasspaths, noTrace);
-        }
+        public void BuildCommand(string[] extraClasspaths, bool noTrace) => DoBuild(extraClasspaths, noTrace);
 
         protected abstract void DoBuild(string[] extraClasspaths, bool noTrace);
     }

@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using ASCompletion.Model;
 
@@ -14,22 +16,29 @@ namespace ASCompletion.Completion
 
         // language constructs
         public bool hasPackages;
+        public string PackageKey;
         public bool hasFriendlyParentPackages;
         public bool hasModules;
         public bool hasNamespaces;
         public bool hasImports;
         public bool hasImportsWildcard;
         public bool hasClasses;
+        public string ClassKey;
         public bool hasMultipleDefs;
         public bool hasExtends;
         public string ExtendsKey;
         public bool hasImplements;
         public string ImplementsKey;
         public bool hasInterfaces;
+        public string InterfaceKey;
         public bool hasEnums;
+        public string EnumKey;
         public bool hasTypeDefs;
+        public string TypeDefKey;
         public bool hasStructs;
+        public string StructKey;
         public bool hasDelegates;
+        public string DelegateKey;
         public bool hasGenerics;
         public bool hasEcmaTyping;
         public bool hasVars;
@@ -42,6 +51,7 @@ namespace ASCompletion.Completion
         public bool hasStaticInheritance;
         public bool hasInference;
         public bool hasStringInterpolation;
+        public bool HasMultilineString;
         public bool checkFileName;
         public char hiddenPackagePrefix;
 
@@ -80,11 +90,12 @@ namespace ASCompletion.Completion
         public string dynamicKey;
         public string importKey;
         public string importKeyAlt;
-        public string[] typesPreKeys = { };
-        public string[] accessKeywords = { };
-        public string[] codeKeywords = { };
-        public string[] declKeywords = { };
-        public string[] typesKeywords = { };
+        public string[] typesPreKeys = Array.Empty<string>();
+        public string[] accessKeywords = Array.Empty<string>();
+        public string[] codeKeywords = Array.Empty<string>();
+        public string[] declKeywords = Array.Empty<string>();
+        public string[] typesKeywords = Array.Empty<string>();
+        public HashSet<string> OperatorKeywords = new HashSet<string>();
         public HashSet<string> Literals = new HashSet<string>();
         public string varKey;
         public string constKey;
@@ -101,20 +112,22 @@ namespace ASCompletion.Completion
         public string intrinsicKey;
         public string inlineKey;
         public string namespaceKey;
-        public string stringInterpolationQuotes = "";
+        public string stringInterpolationQuotes = string.Empty;
         public string ThisKey;
         public string BaseKey;
+        public string ReturnKey;
 
         public Dictionary<string, string> metadata = new Dictionary<string,string>();
 
         public MemberModel functionArguments;
-        public char[] SpecialPostfixOperators = {};
+        public char[] SpecialPostfixOperators = Array.Empty<char>();
         public string ConstructorKey;
         public bool HasGenericsShortNotation;
         public HashSet<char> ArithmeticOperators = new HashSet<char>();
-        public string[] IncrementDecrementOperators = {};
-        public string[] BitwiseOperators = { };
-        public string[] BooleanOperators = { };
+        public string[] IncrementDecrementOperators = Array.Empty<string>();
+        public string[] BitwiseOperators = Array.Empty<string>();
+        public string[] BooleanOperators = Array.Empty<string>();
+        public string[] TernaryOperators = Array.Empty<string>();
 
         /// <summary>
         /// Tells if a word is a keyword which precedes a type (like 'new')
@@ -122,30 +135,24 @@ namespace ASCompletion.Completion
         /// <param name="word"></param>
         /// <returns></returns>
         internal bool HasTypePreKey(string word)
-        {
-            if (typesPreKeys != null)
-            foreach (string key in typesPreKeys)
-                if (key == word) return true;
-            return false;
-        }
+            => typesPreKeys != null
+               && typesPreKeys.Any(it => it == word);
 
         /// <summary>
         /// Get a selected list of possible completion keywords
         /// </summary>
         /// <param name="text">Context</param>
         /// <returns>Keywords list</returns>
-        internal List<string> GetDeclarationKeywords(string text, bool insideClass)
+        internal List<string> GetDeclarationKeywords(string? text, bool insideClass)
         {
-            List<string> access = new List<string>(accessKeywords);
-            List<string> members = new List<string>(declKeywords);
+            var result = new List<string>(accessKeywords);
+            var members = new List<string>(declKeywords);
             if (!insideClass) members.AddRange(typesKeywords);
-
             string foundMember = null;
-
             if (text != null)
             {
-                string[] tokens = Regex.Split(text, "\\s+");
-                foreach (string token in tokens)
+                var tokens = Regex.Split(text, "\\s+");
+                foreach (var token in tokens)
                 {
                     if (token.Length > 0 && members.Contains(token))
                     {
@@ -153,11 +160,11 @@ namespace ASCompletion.Completion
                         break;
                     }
                 }
-                foreach (string token in tokens)
+                foreach (var token in tokens)
                 {
-                    if (token.Length > 0 && access.Contains(token))
+                    if (token.Length > 0 && result.Contains(token))
                     {
-                        access.Remove(token);
+                        result.Remove(token);
                         if (token == overrideKey)
                         {
                             members.Clear();
@@ -165,9 +172,9 @@ namespace ASCompletion.Completion
                         }
                         else if (token == privateKey || token == internalKey || token == publicKey)
                         {
-                            if (privateKey != null) access.Remove(privateKey);
-                            if (internalKey != null) access.Remove(internalKey);
-                            if (publicKey != null) access.Remove(publicKey);
+                            if (privateKey != null) result.Remove(privateKey);
+                            if (internalKey != null) result.Remove(internalKey);
+                            if (publicKey != null) result.Remove(publicKey);
                         }
                         else 
                         {
@@ -177,24 +184,19 @@ namespace ASCompletion.Completion
                     }
                 }
             }
+            if (foundMember is null) result.AddRange(members);
+            else if (foundMember == ClassKey || foundMember == InterfaceKey)
+            {
+                if (hasExtends) result.Add(ExtendsKey);
+                if (hasImplements && foundMember != InterfaceKey) result.Add(ImplementsKey);
+            }
+            else GetDeclarationKeywords(foundMember, result);
+            result.Sort();
+            return result;
+        }
 
-            if (foundMember == null)
-            {
-                access.AddRange(members);
-            }
-            else if (foundMember == "class" || foundMember == "interface")
-            {
-                if (hasExtends) access.Add("extends");
-                if (hasImplements && foundMember != "interface") access.Add("implements");
-            }
-            else if (foundMember == "abstract")
-            {
-                access.Add("to");
-                access.Add("from");
-            }
-
-            access.Sort();
-            return access;
+        protected virtual void GetDeclarationKeywords(string foundMember, List<string> result)
+        {
         }
     }
 }

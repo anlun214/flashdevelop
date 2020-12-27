@@ -65,13 +65,13 @@ namespace ProjectManager.Controls
             ConfigurationSelector = new ToolStripComboBoxEx();
             ConfigurationSelector.Name = "ConfigurationSelector";
             ConfigurationSelector.ToolTipText = TextHelper.GetString("ToolTip.SelectConfiguration");
-            ConfigurationSelector.Items.AddRange(new string[] { TextHelper.GetString("Info.Debug"), TextHelper.GetString("Info.Release") });
+            ConfigurationSelector.Items.AddRange(new object[] { TextHelper.GetString("Info.Debug"), TextHelper.GetString("Info.Release") });
             ConfigurationSelector.DropDownStyle = ComboBoxStyle.DropDownList;
             ConfigurationSelector.AutoSize = false;
             ConfigurationSelector.Enabled = false;
             ConfigurationSelector.Width = ScaleHelper.Scale(GetThemeWidth("ProjectManager.TargetBuildSelectorWidth", 85));
             ConfigurationSelector.Margin = new Padding(1, 0, 0, 0);
-            ConfigurationSelector.FlatStyle = PluginBase.MainForm.Settings.ComboBoxFlatStyle;
+            ConfigurationSelector.FlatStyle = PluginBase.Settings.ComboBoxFlatStyle;
             ConfigurationSelector.Font = PluginBase.Settings.DefaultFont;
             toolBar.Items.Add(ConfigurationSelector);
             PluginBase.MainForm.RegisterShortcutItem("ProjectMenu.ConfigurationSelectorToggle", Keys.Control | Keys.F5);
@@ -83,7 +83,7 @@ namespace ProjectManager.Controls
             TargetBuildSelector.AutoSize = false;
             TargetBuildSelector.Width = ScaleHelper.Scale(GetThemeWidth("ProjectManager.ConfigurationSelectorWidth", 120));
             TargetBuildSelector.Margin = new Padding(1, 0, 0, 0);
-            TargetBuildSelector.FlatStyle = PluginBase.MainForm.Settings.ComboBoxFlatStyle;
+            TargetBuildSelector.FlatStyle = PluginBase.Settings.ComboBoxFlatStyle;
             TargetBuildSelector.Font = PluginBase.Settings.DefaultFont;
             toolBar.Items.Add(TargetBuildSelector);
             PluginBase.MainForm.RegisterShortcutItem("ProjectMenu.TargetBuildSelector", Keys.Control | Keys.F7);
@@ -91,12 +91,10 @@ namespace ProjectManager.Controls
             EnableTargetBuildSelector(false);
         }
 
-        private int GetThemeWidth(string themeId, int defaultValue)
+        static int GetThemeWidth(string themeId, int defaultValue)
         {
             string strValue = PluginBase.MainForm.GetThemeValue(themeId);
-            int intValue;
-            if (int.TryParse(strValue, out intValue)) return intValue;
-            else return defaultValue;
+            return int.TryParse(strValue, out var intValue) ? intValue : defaultValue;
         }
 
         public void EnableTargetBuildSelector(bool enabled)
@@ -108,7 +106,7 @@ namespace ProjectManager.Controls
 
         public bool DisabledForBuild
         {
-            get { return !TestMovie.Enabled; }
+            get => !TestMovie.Enabled;
             set
             {
                 BuildProject.Enabled = TestMovie.Enabled = ProjectMenu.ProjectItemsEnabledForBuild = ConfigurationSelector.Enabled = !value;
@@ -118,11 +116,12 @@ namespace ProjectManager.Controls
 
         public void SetProject(Project project)
         {
+            var enable = !project.IsFolderProject();
             RecentProjects.AddOpenedProject(project.ProjectPath);
-            ConfigurationSelector.Enabled = true;
-            ProjectMenu.ProjectItemsEnabled = true;
-            TestMovie.Enabled = true;
-            BuildProject.Enabled = true;
+            ConfigurationSelector.Enabled = enable;
+            ProjectMenu.ProjectItemsEnabled = enable;
+            TestMovie.Enabled = enable;
+            BuildProject.Enabled = enable;
             ProjectChanged(project);
         }
 
@@ -138,12 +137,12 @@ namespace ProjectManager.Controls
         public void ProjectChanged(Project project)
         {
             TargetBuildSelector.Items.Clear();
-            if (project.MovieOptions.DefaultBuildTargets != null && project.MovieOptions.DefaultBuildTargets.Length > 0)
+            if (!project.MovieOptions.DefaultBuildTargets.IsNullOrEmpty())
             {
                 TargetBuildSelector.Items.AddRange(project.MovieOptions.DefaultBuildTargets);
                 TargetBuildSelector.Text = project.MovieOptions.DefaultBuildTargets[0];
             }
-            else if (project.MovieOptions.TargetBuildTypes != null && project.MovieOptions.TargetBuildTypes.Length > 0)
+            else if (!project.MovieOptions.TargetBuildTypes.IsNullOrEmpty())
             {
                 TargetBuildSelector.Items.AddRange(project.MovieOptions.TargetBuildTypes);
                 string target = project.TargetBuild ?? project.MovieOptions.TargetBuildTypes[0];
@@ -161,17 +160,14 @@ namespace ProjectManager.Controls
 
         internal void AddTargetBuild(string target)
         {
-            if (target == null) return;
+            if (target is null) return;
             target = target.Trim();
             if (target.Length > 0 && !TargetBuildSelector.Items.Contains(target)) 
                 TargetBuildSelector.Items.Insert(0, target);
         }
 
         
-        public void ToggleDebugRelease()
-        {
-            ConfigurationSelector.SelectedIndex = (ConfigurationSelector.SelectedIndex + 1) % 2;
-        }
+        public void ToggleDebugRelease() => ConfigurationSelector.SelectedIndex = (ConfigurationSelector.SelectedIndex + 1) % 2;
     }
 
     /// <summary>
@@ -181,6 +177,7 @@ namespace ProjectManager.Controls
     {
         public ToolStripMenuItem NewProject;
         public ToolStripMenuItem OpenProject;
+        public ToolStripMenuItem OpenFolder;
         public ToolStripMenuItem ImportProject;
         public ToolStripMenuItem CloseProject;
         public ToolStripMenuItem OpenResource;
@@ -190,7 +187,7 @@ namespace ProjectManager.Controls
         public ToolStripMenuItem CleanProject;
         public ToolStripMenuItem Properties;
 
-        private List<ToolStripItem> AllItems;
+        readonly List<ToolStripItem> AllItems;
 
         public ProjectMenu()
         {
@@ -200,6 +197,9 @@ namespace ProjectManager.Controls
             NewProject.Image = Icons.NewProject.Img;
             PluginBase.MainForm.RegisterShortcutItem("ProjectMenu.NewProject", NewProject);
             //AllItems.Add(NewProject);
+
+            OpenFolder = new ToolStripMenuItem(TextHelper.GetString("Label.OpenFolder"));
+            PluginBase.MainForm.RegisterShortcutItem("ProjectMenu.OpenFolder", OpenFolder);
 
             OpenProject = new ToolStripMenuItem(TextHelper.GetString("Label.OpenProject"));
             PluginBase.MainForm.RegisterShortcutItem("ProjectMenu.OpenProject", OpenProject);
@@ -246,19 +246,20 @@ namespace ProjectManager.Controls
             AllItems.Add(Properties);
 
             base.Text = TextHelper.GetString("Label.Project");
-            base.DropDownItems.Add(NewProject);
-            base.DropDownItems.Add(OpenProject);
-            base.DropDownItems.Add(ImportProject);
-            base.DropDownItems.Add(CloseProject);
-            base.DropDownItems.Add(new ToolStripSeparator());
-            base.DropDownItems.Add(OpenResource);
-            base.DropDownItems.Add(new ToolStripSeparator());
-            base.DropDownItems.Add(TestMovie);
-            base.DropDownItems.Add(RunProject);
-            base.DropDownItems.Add(BuildProject);
-            base.DropDownItems.Add(CleanProject);
-            base.DropDownItems.Add(new ToolStripSeparator());
-            base.DropDownItems.Add(Properties);
+            DropDownItems.Add(NewProject);
+            DropDownItems.Add(OpenProject);
+            DropDownItems.Add(OpenFolder);
+            DropDownItems.Add(ImportProject);
+            DropDownItems.Add(CloseProject);
+            DropDownItems.Add(new ToolStripSeparator());
+            DropDownItems.Add(OpenResource);
+            DropDownItems.Add(new ToolStripSeparator());
+            DropDownItems.Add(TestMovie);
+            DropDownItems.Add(RunProject);
+            DropDownItems.Add(BuildProject);
+            DropDownItems.Add(CleanProject);
+            DropDownItems.Add(new ToolStripSeparator());
+            DropDownItems.Add(Properties);
         }
 
         public bool ProjectItemsEnabled
@@ -299,5 +300,4 @@ namespace ProjectManager.Controls
             }
         }
     }
-
 }

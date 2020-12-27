@@ -12,7 +12,18 @@ namespace ProjectManager.Projects
         public int Height;
         public int MajorVersion;
         public int MinorVersion;
-        public string Platform;
+
+        string platform;
+        public string Platform
+        {
+            get => platform;
+            set
+            {
+                if (value == "NME") return;
+                platform = value;
+            }
+        }
+
         public string Background;
         public string[] TargetBuildTypes;
         public string[] DefaultBuildTargets;
@@ -29,8 +40,8 @@ namespace ProjectManager.Projects
 
         public Color BackgroundColor
         {
-            get { return ColorTranslator.FromHtml(Background); }
-            set { Background = string.Format("#{0:X6}", (value.R << 16) + (value.G << 8) + value.B); }
+            get => ColorTranslator.FromHtml(Background);
+            set => Background = $"#{(value.R << 16) + (value.G << 8) + value.B:X6}";
         }
 
         public int BackgroundColorInt
@@ -42,34 +53,15 @@ namespace ProjectManager.Projects
             }
         }
 
-        public virtual bool HasSupport
-        {
-            get { return PlatformData.SupportedLanguages.ContainsKey(Language); }
-        }
+        public virtual bool HasSupport => PlatformData.SupportedLanguages.ContainsKey(Language);
 
-        public virtual SupportedLanguage LanguageSupport
-        {
-            get { return PlatformData.SupportedLanguages[Language]; }
-        }
+        public virtual SupportedLanguage LanguageSupport => PlatformData.SupportedLanguages[Language];
 
-        public virtual bool HasPlatformSupport
-        {
-            get { return HasSupport && Platform != null && LanguageSupport.Platforms.ContainsKey(Platform); }
-        }
+        public virtual bool HasPlatformSupport => HasSupport && Platform != null && LanguageSupport.Platforms.ContainsKey(Platform);
 
-        public virtual LanguagePlatform PlatformSupport
-        {
-            get { return LanguageSupport.Platforms[Platform]; }
-        }
+        public virtual LanguagePlatform PlatformSupport => LanguageSupport.Platforms[Platform];
 
-        public virtual string[] TargetPlatforms 
-        {
-            get
-            {
-                if (HasSupport) return LanguageSupport.PlatformNames;
-                return new string[] { "Custom" };
-            }
-        }
+        public virtual string[] TargetPlatforms => HasSupport ? LanguageSupport.PlatformNames : new[] { "Custom" };
 
         public virtual string[] TargetVersions(string platform)
         {
@@ -78,7 +70,7 @@ namespace ProjectManager.Projects
                 var platforms = LanguageSupport.Platforms;
                 if (platform != null && platforms.ContainsKey(platform)) return platforms[platform].VersionNames;
             }
-            return new string[] { "0.0" };
+            return new[] { "0.0" };
         }
 
         public virtual string DefaultVersion(string platform)
@@ -101,7 +93,7 @@ namespace ProjectManager.Projects
 
         public virtual string Version 
         { 
-            get { return MajorVersion + "." + MinorVersion; }
+            get => MajorVersion + "." + MinorVersion;
             set
             {
                 string[] p = value.Split('.');
@@ -125,7 +117,7 @@ namespace ProjectManager.Projects
             if (HasPlatformSupport)
             {
                 var debugger = PlatformSupport.DebuggerSupported;
-                if (debugger == null) return false;
+                if (debugger is null) return false;
                 
                 if (string.IsNullOrEmpty(targetBuild)) 
                     return debugger.Length > 0 && debugger[0] == "*";
@@ -133,11 +125,10 @@ namespace ProjectManager.Projects
                 foreach (string target in debugger)
                 {
                     if (target == "*") return true;
-                    else if (targetBuild.StartsWith(target, StringComparison.Ordinal)) return true;
+                    if (targetBuild.StartsWith(target, StringComparison.Ordinal)) return true;
                 }
             }
             return false;
         }
-
     }
 }

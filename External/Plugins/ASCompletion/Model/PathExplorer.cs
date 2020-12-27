@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Windows.Forms;
 using ASCompletion.Context;
@@ -22,31 +23,26 @@ namespace ASCompletion.Model
         public delegate void ExplorationProgressHandler(string state, int value, int max);
         public delegate void ExplorationDoneHandler(string path);
 
-        static public bool IsWorking
-        {
-            get { return explorerThread != null; }
-        }
+        public static bool IsWorking => explorerThread != null;
 
-        static private bool uistarted;
-        static private bool contextUpdating;
-        static private Queue<PathExplorer> waiting = new Queue<PathExplorer>();
-        static private volatile Thread explorerThread;
-        static private volatile bool stopExploration;
-        static private volatile int toWait = 1000; // initial delay before exploring the filesystem
+        static bool uistarted;
+        static bool contextUpdating;
+        static readonly Queue<PathExplorer> waiting = new Queue<PathExplorer>();
+        static volatile Thread explorerThread;
+        static volatile bool stopExploration;
+        static volatile int toWait = 1000; // initial delay before exploring the filesystem
 
-        static public void OnUIStarted()
+        public static void OnUIStarted()
         {
-            if (!uistarted)
+            if (uistarted) return;
+            uistarted = true;
+            lock (waiting)
             {
-                uistarted = true;
-                lock (waiting)
-                {
-                    StartBackgroundThread();
-                }
+                StartBackgroundThread();
             }
         }
 
-        static public void StopBackgroundExploration()
+        public static void StopBackgroundExploration()
         {
             // signal to stop cleanly
             stopExploration = true;
@@ -67,22 +63,16 @@ namespace ASCompletion.Model
             lock (waiting) { waiting.Clear(); }
         }
 
-        static public void ClearAll()
+        public static void ClearAll()
         {
             lock (waiting) { waiting.Clear(); }
         }
 
-        static public void BeginUpdate()
-        {
-            contextUpdating = true;
-        }
+        public static void BeginUpdate() => contextUpdating = true;
 
-        static public void EndUpdate()
-        {
-            contextUpdating = false;
-        }
+        public static void EndUpdate() => contextUpdating = false;
 
-        static public void ClearPersistentCache()
+        public static void ClearPersistentCache()
         {
             string cacheDir = GetCachePath();
             try
@@ -97,12 +87,12 @@ namespace ASCompletion.Model
         public event ExplorationDoneHandler OnExplorationDone;
         public bool UseCache;
 
-        private IASContext context;
-        private PathModel pathModel;
-        private List<string> foundFiles;
-        private List<string> explored;
-        private string hashName;
-        private char hiddenPackagePrefix;
+        readonly IASContext context;
+        readonly PathModel pathModel;
+        readonly List<string> foundFiles = new List<string>();
+        readonly List<string> explored = new List<string>();
+        string hashName;
+        readonly char hiddenPackagePrefix;
 
         public PathExplorer(IASContext context, PathModel pathModel)
         {
@@ -110,11 +100,9 @@ namespace ASCompletion.Model
             this.pathModel = pathModel;
             hashName = pathModel.Path;
             hiddenPackagePrefix = context.Features.hiddenPackagePrefix;
-            foundFiles = new List<string>();
-            explored = new List<string>();
         }
 
-        public void HideDirectories(IEnumerable<String> dirs)
+        public void HideDirectories(IEnumerable<string> dirs)
         {
             foreach (string dir in dirs)
             {
@@ -128,26 +116,24 @@ namespace ASCompletion.Model
         {
             lock (waiting)
             {
-                foreach (PathExplorer exp in waiting)
-                    if (exp.pathModel == pathModel) return;
+                if (waiting.Any(exp => exp.pathModel == pathModel)) return;
                 waiting.Enqueue(this);
-
                 StartBackgroundThread();
             }
         }
 
-        private static void StartBackgroundThread()
+        static void StartBackgroundThread()
         {
-            if (uistarted && explorerThread == null)
+            if (!uistarted || explorerThread != null) return;
+            explorerThread = new Thread(ExploreInBackground)
             {
-                explorerThread = new Thread(ExploreInBackground);
-                explorerThread.Name = "ExplorerThread";
-                explorerThread.Priority = ThreadPriority.Lowest;
-                explorerThread.Start();
-            }
+                Name = "ExplorerThread",
+                Priority = ThreadPriority.Lowest
+            };
+            explorerThread.Start();
         }
 
-        private static void ExploreInBackground()
+        static void ExploreInBackground()
         {
             Thread.Sleep(toWait);
             toWait = 10;
@@ -172,27 +158,19 @@ namespace ASCompletion.Model
                     // we want to call these notifications after we've processed the above
                     // logic, so that the last PathExplorer's NotifyDone gets called after
                     // explorerThread is null so that IsWorking is false.
-                    if (last != null && last.OnExplorationDone != null)
+                    if (last?.OnExplorationDone != null)
                     {
                         last.NotifyProgress(null, 0, 0);
                         last.NotifyDone(last.pathModel.Path);
                     }
                 }
 
-                if (next != null)
-                {
-                    next.BackgroundRun();
-                }
+                if (next != null) next.BackgroundRun();
                 else
                 {
-                    PluginBase.RunAsync(() =>
-                    {
-                        EventManager.DispatchEvent(last, new DataEvent(EventType.Command, "ASCompletion.PathExplorerFinished", null));
-                    });
+                    PluginBase.RunAsync(() => EventManager.DispatchEvent(last, new DataEvent(EventType.Command, "ASCompletion.PathExplorerFinished", null)));
                     break;
                 }
-                    
-
                 last = next;
             }
         }
@@ -200,25 +178,24 @@ namespace ASCompletion.Model
         /// <summary>
         /// Background search
         /// </summary>
-        private void BackgroundRun()
+        void BackgroundRun()
         {
             pathModel.Updating = true;
             try
             {
                 if (pathModel.IsVirtual)
                 {
-                    string ext = Path.GetExtension(pathModel.Path).ToLower();
+                    var ext = Path.GetExtension(pathModel.Path).ToLower();
                     if (ext == ".jar" || ext == ".zip")
                     {
                         pathModel.WasExplored = true;
                         ExtractFilesFromArchive();
                     }
-
                     // let the context explore packaged libraries
                     else if (pathModel.Owner != null)
                         try
                         {
-                            NotifyProgress(String.Format(TextHelper.GetString("Info.Parsing"), 1), 0, 1);
+                            NotifyProgress(string.Format(TextHelper.GetString("Info.Parsing"), 1), 0, 1);
                             pathModel.Owner.ExploreVirtualPath(pathModel);
                         }
                         catch (Exception ex)
@@ -252,82 +229,70 @@ namespace ASCompletion.Model
 
                     // write cache file
                     if (UseCache && writeCache && !stopExploration && pathModel.InUse)
-                    try
-                    {
-                        string cacheDir = Path.GetDirectoryName(cacheFileName);
-                        if (!Directory.Exists(cacheDir)) Directory.CreateDirectory(cacheDir);
-                        else if (File.Exists(cacheFileName)) File.Delete(cacheFileName);
-
-                        if (pathModel.FilesCount > 0)
-                            pathModel.Serialize(cacheFileName);
-                    }
-                    catch { }
+                        try
+                        {
+                            var path = Path.GetDirectoryName(cacheFileName);
+                            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+                            else if (File.Exists(cacheFileName)) File.Delete(cacheFileName);
+                            if (pathModel.FilesCount > 0) pathModel.Serialize(cacheFileName);
+                        }
+                        catch { }
                 }
             }
             finally { pathModel.Updating = false; }
         }
 
-        private void ExtractFilesFromArchive()
+        void ExtractFilesFromArchive()
         {
-            string[] masks = context.GetExplorerMask();
-            for (int i = 0; i < masks.Length; i++)
+            var masks = context.GetExplorerMask();
+            for (var i = 0; i < masks.Length; i++)
                 masks[i] = masks[i].Substring(masks[i].IndexOf('*') + 1);
 
-            Stream fileStream = File.OpenRead(pathModel.Path);
-            ZipFile zipFile = new ZipFile(fileStream);
-            ASFileParser parser = new ASFileParser();
-            Dictionary<string, FileModel> models = new Dictionary<string, FileModel>();
-
-            foreach (ZipEntry entry in zipFile)
+            using var stream = File.OpenRead(pathModel.Path);
+            using var zip = new ZipFile(stream);
+            var models = new Dictionary<string, FileModel>();
+            foreach (ZipEntry entry in zip)
             {
-                string ext = Path.GetExtension(entry.Name).ToLower();
-                foreach (string mask in masks)
+                var ext = Path.GetExtension(entry.Name).ToLower();
+                foreach (var mask in masks)
                     if (ext == mask)
                     {
-                        string src = UnzipFile(zipFile, entry);
-                        FileModel model = new FileModel(Path.Combine(pathModel.Path, entry.Name));
+                        var src = UnzipFile(zip, entry);
+                        var model = context.CreateFileModel(Path.Combine(pathModel.Path, entry.Name));
                         model.Context = pathModel.Owner;
-                        parser.ParseSrc(model, src);
+                        context.GetCodeModel(model, src);
                         models.Add(model.FileName, model);
                     }
             }
-            zipFile.Close();
-            fileStream.Close();
-
             pathModel.SetFiles(models);
         }
 
-        private static string UnzipFile(ZipFile zfile, ZipEntry entry)
+        static string UnzipFile(ZipFile file, ZipEntry entry)
         {
-            Stream stream = zfile.GetInputStream(entry);
-            byte[] data = new byte[entry.Size];
-            int length = stream.Read(data, 0, (int)entry.Size);
-            if (length != entry.Size)
-                throw new Exception("Corrupted archive");
-
-            MemoryStream ms = new MemoryStream(data);
-            return new StreamReader(ms).ReadToEnd();
+            using var stream = file.GetInputStream(entry);
+            var data = new byte[entry.Size];
+            var length = stream.Read(data, 0, (int)entry.Size);
+            if (length != entry.Size) throw new Exception("Corrupted archive");
+            using var ms = new MemoryStream(data);
+            using var reader = new StreamReader(ms);
+            var result = reader.ReadToEnd();
+            return result;
         }
 
-        private bool ParseFoundFiles()
+        bool ParseFoundFiles()
         {
             bool writeCache = false;
 
             // parse files
             int n = foundFiles.Count;
-            NotifyProgress(String.Format(TextHelper.GetString("Info.Parsing"), n), 0, n);
-            FileModel aFile = null;
-            int cpt = 0;
-            string filename;
+            NotifyProgress(string.Format(TextHelper.GetString("Info.Parsing"), n), 0, n);
             for (int i = 0; i < n; i++)
             {
                 if (stopExploration) return writeCache;
                 // parse
-                filename = foundFiles[i];
-                if (!File.Exists(filename))
-                    continue;
-                FileModel cachedModel;
-                if (pathModel.TryGetFile(filename, out cachedModel))
+                var filename = foundFiles[i];
+                if (!File.Exists(filename)) continue;
+                if (pathModel.TryGetFile(filename, out var cachedModel))
                 {
                     if (cachedModel.OutOfDate)
                     {
@@ -336,58 +301,44 @@ namespace ASCompletion.Model
                     }
                     continue;
                 }
-                else writeCache = true;
 
-                aFile = GetFileModel(filename);
+                writeCache = true;
 
-                if (aFile == null || pathModel.HasFile(filename)) continue;
+                var aFile = GetFileModel(filename);
+
+                if (aFile is null || pathModel.HasFile(filename)) continue;
                 // store model
                 if (aFile.Context.IsModelValid(aFile, pathModel))
                     pathModel.AddFile(aFile);
-                cpt++;
                 // update status
                 if (stopExploration) return writeCache;
-                if (i % 10 == 0) NotifyProgress(String.Format(TextHelper.GetString("Info.Parsing"), n), i, n);
+                if (i % 10 == 0) NotifyProgress(string.Format(TextHelper.GetString("Info.Parsing"), n), i, n);
                 Thread.Sleep(1);
             }
             return writeCache;
         }
 
-        private string GetCacheFileName(string path)
+        string GetCacheFileName(string path)
         {
-            string cacheDir = GetCachePath();
-            string hashFileName = HashCalculator.CalculateSHA1(path);
+            var cacheDir = GetCachePath();
+            var hashFileName = HashCalculator.CalculateSHA1(path);
             return Path.Combine(cacheDir, hashFileName + "." + context.Settings.LanguageId.ToLower() + ".bin");
         }
 
-        private static string GetCachePath()
-        {
-            return Path.Combine(PathHelper.DataDir, "ASCompletion", "FileCache");
-        }
+        static string GetCachePath() => Path.Combine(PathHelper.DataDir, nameof(ASCompletion), "FileCache");
 
-        private void NotifyProgress(string state, int value, int max)
-        {
-            ExplorationProgressHandler handler = OnExplorationProgress;
-            if (handler != null)
-                handler(state, value, max);
-        }
+        void NotifyProgress(string state, int value, int max) => OnExplorationProgress?.Invoke(state, value, max);
 
-        private void NotifyDone(string path)
-        {
-            ExplorationDoneHandler handler = OnExplorationDone;
-            if (handler != null)
-                handler(path);
-        }
+        void NotifyDone(string path) => OnExplorationDone?.Invoke(path);
 
-        private FileModel GetFileModel(string filename)
+        FileModel? GetFileModel(string filename)
         {
             // Going to try just doing this operation on our background thread - if there
             // are any strange exceptions, this should be synchronized
-            IASContext ctx = context;
-            return (ctx != null) ? ctx.GetFileModel(filename) : null;
+            return context?.GetFileModel(filename);
         }
 
-        private void ExploreFolder(string path, string[] masks)
+        void ExploreFolder(string path, string[] masks)
         {
             if (stopExploration || !Directory.Exists(path)) return;
             explored.Add(path);
@@ -398,11 +349,10 @@ namespace ASCompletion.Model
             //  Directory.GetFiles() can throw an IOException instead of returning an empty array.
             try
             {
-                foreach (string mask in masks)
+                foreach (var mask in masks)
                 {
-                    string[] files = Directory.GetFiles(path, mask);
-                    if (files != null)
-                        foreach (string file in files) foundFiles.Add(file);
+                    var files = Directory.GetFiles(path, mask);
+                    foundFiles.AddRange(files);
                     Thread.Sleep(5);
                 }
             }
@@ -411,7 +361,7 @@ namespace ASCompletion.Model
             try
             {
                 // explore subfolders
-                string[] dirs = Directory.GetDirectories(path);
+                var dirs = Directory.GetDirectories(path);
                 foreach (string dir in dirs)
                 {
                     if (!explored.Contains(dir) 
@@ -423,12 +373,10 @@ namespace ASCompletion.Model
             catch { }
         }
 
-        private bool IgnoreDirectory(string dir)
+        bool IgnoreDirectory(string dir)
         {
-            var name = Path.GetFileName(dir);
-            if (name[0] == '.') return true;
-            if (hiddenPackagePrefix != 0 && name[0] == hiddenPackagePrefix) return true;
-            return false;
+            return Path.GetFileName(dir) is {} name 
+                && (name[0] == '.' || (hiddenPackagePrefix != 0 && name[0] == hiddenPackagePrefix));
         }
     }
 }

@@ -4,8 +4,6 @@ namespace ProjectManager.Projects.AS3
 {
     public class AS3MovieOptions : MovieOptions
     {
-        
-
         public AS3MovieOptions()
         {
             Language = "as3";
@@ -14,19 +12,9 @@ namespace ProjectManager.Projects.AS3
         }
 
         public override OutputType[] OutputTypes
-        {
-            get
-            {
-                return new OutputType[] { 
-                    OutputType.OtherIDE, OutputType.CustomBuild, OutputType.Application/*, OutputType.Library*/ };
-            }
-        }
+            => new[] { OutputType.OtherIDE, OutputType.CustomBuild, OutputType.Application/*, OutputType.Library*/ };
 
         public override OutputType DefaultOutput(string platform)
-        {
-            return platform == PlatformData.CUSTOM_PLATFORM ? OutputType.CustomBuild : OutputType.Application;
-        }
+            => platform == PlatformData.CUSTOM_PLATFORM ? OutputType.CustomBuild : OutputType.Application;
     }
-
 }
-

@@ -8,23 +8,22 @@ using PluginCore.Helpers;
 
 namespace ProjectManager.Projects.AS3
 {
-    class FlexProjectReader : ProjectReader
+    internal class FlexProjectReader : ProjectReader
     {
-        private static Regex reArgs = new Regex(@"\$\{(\w+)\}", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
-        
-        private AS3Project project;
-        private string mainApp;
-        private string outputPath;
-        private string fpVersion;
-        private PathCollection applications;
+        static readonly Regex reArgs = new Regex(@"\$\{(\w+)\}", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+        readonly AS3Project project;
+        string mainApp;
+        string outputPath;
+        string fpVersion;
+        PathCollection applications;
 
         public IDictionary<string, string> EnvironmentPaths { get; set; }
 
-        public FlexProjectReader(string filename)
-            : base(filename, new AS3Project(filename))
+        public FlexProjectReader(string filename) : base(filename, new AS3Project(filename))
         {
-            this.project = base.Project as AS3Project;
-            Directory.SetCurrentDirectory(project.Directory);
+            project = (AS3Project) Project;
+            Directory.SetCurrentDirectory(Project.Directory);
         }
 
         protected override void ProcessRootNode()
@@ -36,34 +35,32 @@ namespace ProjectManager.Projects.AS3
 
         protected override void ProcessNode(string name)
         {
-            if (NodeType == XmlNodeType.Element)
-                switch (name)
-                {
-                    case "compiler": ReadCompilerOptions(); break;
-                    case "applications": ReadApplications(); break;
-                    case "modules": ReadModules(); break;
-                    case "theme": ReadTheme(); break;
-                    case "buildTargets": ReadBuildTargets(); break;
-                }
+            if (NodeType != XmlNodeType.Element) return;
+            switch (name)
+            {
+                case "compiler": ReadCompilerOptions(); break;
+                case "applications": ReadApplications(); break;
+                case "modules": ReadModules(); break;
+                case "theme": ReadTheme(); break;
+                case "buildTargets": ReadBuildTargets(); break;
+            }
         }
 
-        private void ReadCompilerOptions()
+        void ReadCompilerOptions()
         {
             outputPath = GetAttribute("outputFolderLocation") ?? (GetAttribute("outputFolderPath") ?? "");
-
-            string src = GetAttribute("sourceFolderPath");
+            var src = GetAttribute("sourceFolderPath");
             if (src != null) project.Classpaths.Add(src);
             mainApp = (src ?? "") + "/" + mainApp;
             if (mainApp.StartsWith('/')) mainApp = mainApp.Substring(1);
             project.CompileTargets.Add(OSPath(mainApp.Replace('/', '\\')));
-
             project.TraceEnabled = GetAttribute("enableModuleDebug") == "true";
             project.CompilerOptions.Warnings = GetAttribute("warn") == "true";
             project.CompilerOptions.Strict = GetAttribute("strict") == "true";
             project.CompilerOptions.Accessible = GetAttribute("generateAccessible") == "true";
 
-            string additional = GetAttribute("additionalCompilerArguments") ?? string.Empty;
-            List<string> api = new List<string>();
+            var additional = GetAttribute("additionalCompilerArguments") ?? string.Empty;
+            var api = new List<string>();
             if (GetAttribute("useApolloConfig") == "true")
             {
                 if (additional.Length > 0) additional += "\n";
@@ -82,8 +79,8 @@ namespace ProjectManager.Projects.AS3
                 int target = 4;
                 try
                 {
-                    string mainFile = ResolvePath(mainApp, project.Directory);
-                    if (mainFile != null && File.Exists(mainFile))
+                    var mainFile = ResolvePath(mainApp, project.Directory);
+                    if (File.Exists(mainFile))
                         if (File.ReadAllText(mainFile).IndexOfOrdinal("http://www.adobe.com/2006/mxml") > 0)
                         {
                             target = 3;
@@ -92,11 +89,14 @@ namespace ProjectManager.Projects.AS3
                                 project.MovieOptions.Version = "9.0";
                         }
                 }
-                catch { }
+                catch
+                {
+                    // ignored
+                }
                 api.Add("Library\\AS3\\frameworks\\Flex" + target);
             }
-            string[] projectAdditional = project.CompilerOptions.Additional ?? new string[] { };
-            string[] fbAdditional = additional.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var projectAdditional = project.CompilerOptions.Additional ?? Array.Empty<string>();
+            var fbAdditional = additional.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
             if (fbAdditional.Length > 0)
             {
                 // TODO: Analyze the additional arguments for better support
@@ -111,7 +111,7 @@ namespace ProjectManager.Projects.AS3
                 ProcessCompilerOptionNode(Name);
         }
 
-        private void ProcessCompilerOptionNode(string name)
+        void ProcessCompilerOptionNode(string name)
         {
             if (NodeType == XmlNodeType.Element)
                 switch (name)
@@ -121,7 +121,7 @@ namespace ProjectManager.Projects.AS3
                 }
         }
 
-        private void ReadCompilerSourcePaths()
+        void ReadCompilerSourcePaths()
         {
             if (!IsEmptyElement)
             {
@@ -137,7 +137,7 @@ namespace ProjectManager.Projects.AS3
                     if (!Directory.Exists(pathTmp) && !File.Exists(pathTmp))
                         pathTmp = reArgs.Replace(path, ReplaceVars);
                     
-                    if (pathTmp.Length > 0 && !pathTmp.StartsWith("$"))
+                    if (pathTmp.Length > 0 && !pathTmp.StartsWith('$'))
                         paths.Add(pathTmp);
 
                     Read();
@@ -145,12 +145,11 @@ namespace ProjectManager.Projects.AS3
             }
         }
 
-        private void ReadLibraryPaths()
+        void ReadLibraryPaths()
         {
             if (!IsStartElement())
                 return;
             ReadStartElement("libraryPath");
-            LibraryAsset asset;
             bool exclude = false;
             while (Name != "libraryPath")
             {
@@ -173,7 +172,7 @@ namespace ProjectManager.Projects.AS3
                             
                         if (pathTmp.Length > 0 && !pathTmp.StartsWith('$'))
                         {
-                            asset = new LibraryAsset(project, pathTmp);
+                            var asset = new LibraryAsset(project, pathTmp);
                             if (exclude || GetAttribute("linkType") == "2")
                                 asset.SwfMode = SwfAssetMode.ExternalLibrary;
                             else
@@ -200,7 +199,7 @@ namespace ProjectManager.Projects.AS3
             }
         }
 
-        private void ReadModules()
+        void ReadModules()
         {
             ReadStartElement("modules");
             while (Name == "module")
@@ -214,23 +213,15 @@ namespace ProjectManager.Projects.AS3
             }
         }
 
-        private void ReadTheme()
+        void ReadTheme()
         {
-            char s = Path.DirectorySeparatorChar;
-            string themeLocation = OSPath(GetAttribute("themeLocation"));
-            bool isSdk = GetAttribute("themeIsSDK") == "true";
-            string themeName = themeLocation.Substring(themeLocation.LastIndexOf(Path.DirectorySeparatorChar) + 1).ToLower();
-            string[] tmpPaths;
-
-            if (!isSdk)
-            {
-                tmpPaths = new[] {".packagedThemes", reArgs.Replace(themeLocation, ReplaceVars)};
-            }
-            else
-            {
-                tmpPaths = new [] {reArgs.Replace(themeLocation, ReplaceVars)};
-            }
-
+            var s = Path.DirectorySeparatorChar;
+            var themeLocation = OSPath(GetAttribute("themeLocation"));
+            var isSdk = GetAttribute("themeIsSDK") == "true";
+            var themeName = themeLocation.Substring(themeLocation.LastIndexOf(Path.DirectorySeparatorChar) + 1).ToLower();
+            var tmpPaths = !isSdk
+                ? new[] {".packagedThemes", reArgs.Replace(themeLocation, ReplaceVars)}
+                : new [] {reArgs.Replace(themeLocation, ReplaceVars)};
             string themeFile = string.Empty;
             bool themeFound = false;
             foreach (var tmpPath in tmpPaths)
@@ -273,7 +264,7 @@ namespace ProjectManager.Projects.AS3
             else
                 themeFile = Path.Combine(themeLocation, themeFile);
             
-            string[] additional = project.CompilerOptions.Additional ?? new string[] { };
+            var additional = project.CompilerOptions.Additional ?? Array.Empty<string>();
             Array.Resize(ref additional, additional.Length + 1);
 
             additional[additional.Length - 1] = "-theme" + (GetAttribute("themeIsDefault") == "false" ? "+=" : "=") + PathHelper.GetShortPathName(themeFile);
@@ -283,7 +274,7 @@ namespace ProjectManager.Projects.AS3
             project.RebuildCompilerOptions();
         }
 
-        private void ReadBuildTargets()
+        void ReadBuildTargets()
         {
             ReadStartElement("buildTargets");
             while (Name == "buildTarget")
@@ -298,31 +289,29 @@ namespace ProjectManager.Projects.AS3
             }
         }
 
-        public static String ResolvePath(String path, String relativeTo)
+        public static string ResolvePath(string path, string relativeTo)
         {
             if (string.IsNullOrEmpty(path)) return null;
-            Boolean isPathNetworked = path.StartsWithOrdinal("\\\\") || path.StartsWithOrdinal("//");
+            bool isPathNetworked = path.StartsWithOrdinal("\\\\") || path.StartsWithOrdinal("//");
             if (Path.IsPathRooted(path) || isPathNetworked) return path;
-            String resolvedPath = Path.Combine(relativeTo, path);
+            string resolvedPath = Path.Combine(relativeTo, path);
             if (Directory.Exists(resolvedPath) || File.Exists(resolvedPath)) return resolvedPath;
             return null;
         }
 
-        private string ReplaceVars(Match match)
+        string ReplaceVars(Match match)
         {
             if (match.Groups.Count > 0)
             {
                 string name = match.Groups[1].Value.ToUpperInvariant();
-                string value;
-                if (EnvironmentPaths != null && EnvironmentPaths.TryGetValue(name, out value))
+                if (EnvironmentPaths != null && EnvironmentPaths.TryGetValue(name, out var value))
                     return value;
 
                 switch (name)
                 {
                     case "EXTERNAL_THEME_DIR":
                         var path = GetThemeFolderPath();
-                        if (path == string.Empty) return match.Value;
-                        return path;
+                        return path.Length == 0 ? match.Value : path;
                     case "SDK_THEMES_DIR":
                         return PathHelper.ResolvePath(PluginBase.MainForm.ProcessArgString("$(FlexSDK)")) ?? "C:\\flex_sdk";
                     //case "PROJECT_FRAMEWORKS":    // We're leaving this one commented for the moment

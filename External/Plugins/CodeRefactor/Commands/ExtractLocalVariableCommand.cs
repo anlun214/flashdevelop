@@ -89,8 +89,8 @@ namespace CodeRefactor.Commands
             var newName = "newVar";
             var label = TextHelper.GetString("Label.NewName");
             var title = TextHelper.GetString("Title.ExtractLocalVariableDialog");
-            var askName = new LineEntryDialog(title, label, newName);
-            var choice = askName.ShowDialog();
+            using var dialog = new LineEntryDialog(title, label, newName);
+            var choice = dialog.ShowDialog();
             var sci = PluginBase.MainForm.CurrentDocument.SciControl;
             if (choice != DialogResult.OK)
             {
@@ -98,7 +98,7 @@ namespace CodeRefactor.Commands
                 return null;
             }
             sci.DisableAllSciEvents = false;
-            var name = askName.Line.Trim();
+            var name = dialog.Line.Trim();
             if (name.Length > 0 && name != newName) newName = name;
             return newName;
         }
@@ -107,7 +107,8 @@ namespace CodeRefactor.Commands
         {
             if (string.IsNullOrEmpty(newName)) newName = GetNewName();
             if (string.IsNullOrEmpty(newName)) return;
-            var sci = PluginBase.MainForm.CurrentDocument.SciControl;
+            var sci = PluginBase.MainForm.CurrentDocument?.SciControl;
+            if (sci is null) return;
             var pos = sci.SelectionEnd;
             var expr = ASComplete.GetExpressionType(sci, pos, false, true);
             var type = !expr.IsNull() && expr.Type != null ? expr.Type.Name : string.Empty;
@@ -173,7 +174,7 @@ namespace CodeRefactor.Commands
                     var lineNumber = match.Line;
                     var changedLine = lineChanges.ContainsKey(lineNumber) ? lineChanges[lineNumber] : match.LineText;
                     var offset = lineOffsets.ContainsKey(lineNumber) ? lineOffsets[lineNumber] : 0;
-                    column = column + offset;
+                    column += offset;
                     changedLine = changedLine.Substring(0, column) + newName + changedLine.Substring(column + match.Length);
                     lineChanges[lineNumber] = changedLine;
                     lineOffsets[lineNumber] = offset + (newNameLength - match.Length);
@@ -192,10 +193,7 @@ namespace CodeRefactor.Commands
             PluginBase.MainForm.CallCommand("PluginCommand", "ResultsPanel.ShowResults;" + PluginMain.TraceGroup);
         }
 
-        void OnItemClick(object sender, EventArgs e)
-        {
-            GenerateExtractVariable(((CompletionListItem) sender).Matches);
-        }
+        void OnItemClick(object sender, EventArgs e) => GenerateExtractVariable(((CompletionListItem) sender).Matches);
     }
 
     internal sealed class CompletionListItem : ToolStripMenuItem, ICompletionListItem
@@ -229,7 +227,7 @@ namespace CodeRefactor.Commands
             }
         }
 
-        string description;
+        readonly string description;
         public string Description
         {
             get
@@ -246,7 +244,7 @@ namespace CodeRefactor.Commands
             }
         }
 
-        public Bitmap Icon { get; private set; }
+        public Bitmap Icon { get; }
 
         /// <summary>
         /// Modify the highlight indicator alpha and select current word.

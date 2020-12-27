@@ -9,32 +9,28 @@ namespace WeifenLuo.WinFormsUI.Docking
 {
     public class FloatWindow : Form, INestedPanesContainer, IDockDragSource
     {
-        private NestedPaneCollection m_nestedPanes;
         internal const int WM_CHECKDISPOSE = (int)(Win32.Msgs.WM_USER + 1);
 
-        internal protected FloatWindow(DockPanel dockPanel, DockPane pane)
+        protected internal FloatWindow(DockPanel dockPanel, DockPane pane)
         {
             InternalConstruct(dockPanel, pane, false, Rectangle.Empty);
         }
 
-        internal protected FloatWindow(DockPanel dockPanel, DockPane pane, Rectangle bounds)
+        protected internal FloatWindow(DockPanel dockPanel, DockPane pane, Rectangle bounds)
         {
             InternalConstruct(dockPanel, pane, true, bounds);
         }
 
-        private void InternalConstruct(DockPanel dockPanel, DockPane pane, bool boundsSpecified, Rectangle bounds)
+        void InternalConstruct(DockPanel dockPanel, DockPane pane, bool boundsSpecified, Rectangle bounds)
         {
-            if (dockPanel == null)
-                throw(new ArgumentNullException(Strings.FloatWindow_Constructor_NullDockPanel));
+            if (dockPanel is null) throw new ArgumentNullException(Strings.FloatWindow_Constructor_NullDockPanel);
 
-            m_nestedPanes = new NestedPaneCollection(this);
+            NestedPanes = new NestedPaneCollection(this);
 
             FormBorderStyle = FormBorderStyle.SizableToolWindow;
             ShowInTaskbar = false;
-            if (dockPanel.RightToLeft != RightToLeft)
-                RightToLeft = dockPanel.RightToLeft;
-            if (RightToLeftLayout != dockPanel.RightToLeftLayout)
-                RightToLeftLayout = dockPanel.RightToLeftLayout;
+            if (dockPanel.RightToLeft != RightToLeft) RightToLeft = dockPanel.RightToLeft;
+            if (RightToLeftLayout != dockPanel.RightToLeftLayout) RightToLeftLayout = dockPanel.RightToLeftLayout;
             
             SuspendLayout();
             if (boundsSpecified)
@@ -47,13 +43,10 @@ namespace WeifenLuo.WinFormsUI.Docking
                 StartPosition = FormStartPosition.CenterParent;
                 Size = dockPanel.DefaultFloatWindowSize;
             }
-
-            m_dockPanel = dockPanel;
+            DockPanel = dockPanel;
             Owner = DockPanel.FindForm();
             DockPanel.AddFloatWindow(this);
-            if (pane != null)
-                pane.FloatWindow = this;
-
+            if (pane != null) pane.FloatWindow = this;
             ResumeLayout();
         }
 
@@ -61,52 +54,25 @@ namespace WeifenLuo.WinFormsUI.Docking
         {
             if (disposing)
             {
-                if (DockPanel != null)
-                    DockPanel.RemoveFloatWindow(this);
-                m_dockPanel = null;
+                DockPanel?.RemoveFloatWindow(this);
+                DockPanel = null;
             }
             base.Dispose(disposing);
         }
 
-        private bool m_allowEndUserDocking = true;
-        public bool AllowEndUserDocking
-        {
-            get {   return m_allowEndUserDocking;   }
-            set {   m_allowEndUserDocking = value;  }
-        }
+        public bool AllowEndUserDocking { get; set; } = true;
 
-        private bool m_doubleClickTitleBarToDock = true;
-        public bool DoubleClickTitleBarToDock
-        {
-            get { return m_doubleClickTitleBarToDock; }
-            set { m_doubleClickTitleBarToDock = value; }
-        }
+        public bool DoubleClickTitleBarToDock { get; set; } = true;
 
-        public NestedPaneCollection NestedPanes
-        {
-            get {   return m_nestedPanes;   }
-        }
+        public NestedPaneCollection NestedPanes { get; set; }
 
-        public VisibleNestedPaneCollection VisibleNestedPanes
-        {
-            get {   return NestedPanes.VisibleNestedPanes;  }
-        }
+        public VisibleNestedPaneCollection VisibleNestedPanes => NestedPanes.VisibleNestedPanes;
 
-        private DockPanel m_dockPanel;
-        public DockPanel DockPanel
-        {
-            get {   return m_dockPanel; }
-        }
+        public DockPanel DockPanel { get; set; }
 
-        public DockState DockState
-        {
-            get {   return DockState.Float; }
-        }
-    
-        public bool IsFloat
-        {
-            get {   return DockState == DockState.Float;    }
-        }
+        public DockState DockState => DockState.Float;
+
+        public bool IsFloat => DockState == DockState.Float;
 
         internal bool IsDockStateValid(DockState dockState)
         {
@@ -140,9 +106,9 @@ namespace WeifenLuo.WinFormsUI.Docking
         {
             DockPane theOnlyPane = (VisibleNestedPanes.Count == 1) ? VisibleNestedPanes[0] : null;
 
-            if (theOnlyPane == null)
+            if (theOnlyPane is null)
                 Text = " "; // use " " instead of string.Empty because the whole title bar will disappear when ControlBox is set to false.
-            else if (theOnlyPane.ActiveContent == null)
+            else if (theOnlyPane.ActiveContent is null)
                 Text = " ";
             else
                 Text = theOnlyPane.ActiveContent.DockHandler.TabText;
@@ -173,20 +139,21 @@ namespace WeifenLuo.WinFormsUI.Docking
                 if (result == 2 && DockPanel.AllowEndUserDocking && this.AllowEndUserDocking)   // HITTEST_CAPTION
                 {
                     Activate();
-                    m_dockPanel.BeginDrag(this);
+                    DockPanel.BeginDrag(this);
                 }
                 else
                     base.WndProc(ref m);
 
                 return;
             }
-            else if (m.Msg == (int)Win32.Msgs.WM_NCRBUTTONDOWN)
+
+            if (m.Msg == (int)Win32.Msgs.WM_NCRBUTTONDOWN)
             {
                 uint result = !NativeMethods.ShouldUseWin32() ? 0 : NativeMethods.SendMessage(this.Handle, (int)Win32.Msgs.WM_NCHITTEST, 0, (uint)m.LParam);
                 if (result == 2)    // HITTEST_CAPTION
                 {
                     DockPane theOnlyPane = (VisibleNestedPanes.Count == 1) ? VisibleNestedPanes[0] : null;
-                    if (theOnlyPane != null && theOnlyPane.ActiveContent != null)
+                    if (theOnlyPane?.ActiveContent != null)
                     {
                         theOnlyPane.ShowTabPageContextMenu(this, PointToClient(Control.MousePosition));
                         return;
@@ -196,7 +163,7 @@ namespace WeifenLuo.WinFormsUI.Docking
                 base.WndProc(ref m);
                 return;
             }
-            else if (m.Msg == (int)Win32.Msgs.WM_CLOSE)
+            if (m.Msg == (int)Win32.Msgs.WM_CLOSE)
             {
                 if (NestedPanes.Count == 0)
                 {
@@ -225,7 +192,7 @@ namespace WeifenLuo.WinFormsUI.Docking
 
                 return;
             }
-            else if (m.Msg == (int)Win32.Msgs.WM_NCLBUTTONDBLCLK)
+            if (m.Msg == (int)Win32.Msgs.WM_NCLBUTTONDBLCLK)
             {
                 uint result = !DoubleClickTitleBarToDock || !NativeMethods.ShouldUseWin32() ? 0 : NativeMethods.SendMessage(this.Handle, (int)Win32.Msgs.WM_NCHITTEST, 0, (uint)m.LParam);
                 if (result != 2)    // HITTEST_CAPTION
@@ -288,10 +255,7 @@ namespace WeifenLuo.WinFormsUI.Docking
             ControlBox = false;
         }
 
-        public virtual Rectangle DisplayingRectangle
-        {
-            get {   return ClientRectangle; }
-        }
+        public virtual Rectangle DisplayingRectangle => ClientRectangle;
 
         internal void TestDrop(IDockDragSource dragSource, DockOutlineBase dockOutline)
         {
@@ -317,10 +281,7 @@ namespace WeifenLuo.WinFormsUI.Docking
 
         #region IDragSource Members
 
-        Control IDragSource.DragControl
-        {
-            get { return this; }
-        }
+        Control IDragSource.DragControl => this;
 
         #endregion
 
@@ -368,15 +329,14 @@ namespace WeifenLuo.WinFormsUI.Docking
             }
             else
             {
-                DockAlignment alignment = DockAlignment.Left;
-                if (dockStyle == DockStyle.Left)
-                    alignment = DockAlignment.Left;
-                else if (dockStyle == DockStyle.Right)
-                    alignment = DockAlignment.Right;
-                else if (dockStyle == DockStyle.Top)
-                    alignment = DockAlignment.Top;
-                else if (dockStyle == DockStyle.Bottom)
-                    alignment = DockAlignment.Bottom;
+                DockAlignment alignment = dockStyle switch
+                {
+                    DockStyle.Left => DockAlignment.Left,
+                    DockStyle.Right => DockAlignment.Right,
+                    DockStyle.Top => DockAlignment.Top,
+                    DockStyle.Bottom => DockAlignment.Bottom,
+                    _ => DockAlignment.Left
+                };
 
                 MergeNestedPanes(VisibleNestedPanes, pane.NestedPanesContainer.NestedPanes, pane, alignment, 0.5);
             }
@@ -385,20 +345,17 @@ namespace WeifenLuo.WinFormsUI.Docking
         public void DockTo(DockPanel panel, DockStyle dockStyle)
         {
             if (panel != DockPanel)
-                throw new ArgumentException(Strings.IDockDragSource_DockTo_InvalidPanel, "panel");
+                throw new ArgumentException(Strings.IDockDragSource_DockTo_InvalidPanel, nameof(panel));
 
-            NestedPaneCollection nestedPanesTo = null;
-
-            if (dockStyle == DockStyle.Top)
-                nestedPanesTo = DockPanel.DockWindows[DockState.DockTop].NestedPanes;
-            else if (dockStyle == DockStyle.Bottom)
-                nestedPanesTo = DockPanel.DockWindows[DockState.DockBottom].NestedPanes;
-            else if (dockStyle == DockStyle.Left)
-                nestedPanesTo = DockPanel.DockWindows[DockState.DockLeft].NestedPanes;
-            else if (dockStyle == DockStyle.Right)
-                nestedPanesTo = DockPanel.DockWindows[DockState.DockRight].NestedPanes;
-            else if (dockStyle == DockStyle.Fill)
-                nestedPanesTo = DockPanel.DockWindows[DockState.Document].NestedPanes;
+            var nestedPanesTo = dockStyle switch
+            {
+                DockStyle.Top => DockPanel.DockWindows[DockState.DockTop].NestedPanes,
+                DockStyle.Bottom => DockPanel.DockWindows[DockState.DockBottom].NestedPanes,
+                DockStyle.Left => DockPanel.DockWindows[DockState.DockLeft].NestedPanes,
+                DockStyle.Right => DockPanel.DockWindows[DockState.DockRight].NestedPanes,
+                DockStyle.Fill => DockPanel.DockWindows[DockState.Document].NestedPanes,
+                _ => null
+            };
 
             DockPane prevPane = null;
             for (int i = nestedPanesTo.Count - 1; i >= 0; i--)
@@ -407,7 +364,7 @@ namespace WeifenLuo.WinFormsUI.Docking
             MergeNestedPanes(VisibleNestedPanes, nestedPanesTo, prevPane, DockAlignment.Left, 0.5);
         }
 
-        private static void MergeNestedPanes(VisibleNestedPaneCollection nestedPanesFrom, NestedPaneCollection nestedPanesTo, DockPane prevPane, DockAlignment alignment, double proportion)
+        static void MergeNestedPanes(VisibleNestedPaneCollection nestedPanesFrom, NestedPaneCollection nestedPanesTo, DockPane prevPane, DockAlignment alignment, double proportion)
         {
             if (nestedPanesFrom.Count == 0)
                 return;

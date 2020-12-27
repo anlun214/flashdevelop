@@ -55,20 +55,20 @@ namespace Ude.Core
         protected SequenceModel model;
         
         // true if we need to reverse every pair in the model lookup        
-        bool reversed; 
+        readonly bool reversed; 
 
         // char order of last character
         byte lastOrder;
 
         int totalSeqs;
         int totalChar;
-        int[] seqCounters = new int[NUMBER_OF_SEQ_CAT];
+        readonly int[] seqCounters = new int[NUMBER_OF_SEQ_CAT];
         
         // characters that fall in our sampling range
         int freqChar;
   
         // Optional auxiliary prober for name decision. created and destroyed by the GroupProber
-        CharsetProber nameProber; 
+        readonly CharsetProber nameProber; 
                     
         public SingleByteCharSetProber(SequenceModel model) 
             : this(model, false, null)
@@ -110,12 +110,15 @@ namespace Ude.Core
             }
 
             if (state == ProbingState.Detecting) {
-                if (totalSeqs > SB_ENOUGH_REL_THRESHOLD) {
+                if (totalSeqs > SB_ENOUGH_REL_THRESHOLD)
+                {
                     float cf = GetConfidence();
-                    if (cf > POSITIVE_SHORTCUT_THRESHOLD)
-                        state = ProbingState.FoundIt;
-                    else if (cf < NEGATIVE_SHORTCUT_THRESHOLD)
-                        state = ProbingState.NotMe;
+                    state = cf switch
+                    {
+                        > POSITIVE_SHORTCUT_THRESHOLD => ProbingState.FoundIt,
+                        < NEGATIVE_SHORTCUT_THRESHOLD => ProbingState.NotMe,
+                        _ => state
+                    };
                 }
             }
             return state;
@@ -163,7 +166,7 @@ namespace Ude.Core
         
         public override string GetCharsetName() 
         {
-            return (nameProber == null) ? model.CharsetName
+            return (nameProber is null) ? model.CharsetName
                                         : nameProber.GetCharsetName();
         }
         

@@ -12,10 +12,8 @@ namespace ProjectManager.Helpers
     /// </summary>
     public class FlexCompilerShell : MarshalByRefObject
     {
-        public static string FcshPath;
-
         //C:\...\Main.as(17): col: 15 Warning: variable 'yc' has no type declaration.
-        private static readonly Regex reWarning
+        static readonly Regex reWarning
             = new Regex("\\([0-9]+\\): col: [0-9]+ Warning:", RegexOptions.Compiled);
 
         // fcsh.exe process
@@ -37,7 +35,7 @@ namespace ProjectManager.Helpers
             errorList = new List<string>();
             warningList = new List<string>();
 
-            if (jvmarg == null)
+            if (jvmarg is null)
             {
                 process = null;
                 return "Failed, no compiler configured";
@@ -72,25 +70,17 @@ namespace ProjectManager.Helpers
             return ReadUntilPrompt();
         }
 
-        void process_Exited(object sender, EventArgs e)
-        {
-            throw new Exception("Process Exited");
-        }
-
-
         public void Compile(string projectPath,
-                            bool configChanged,
                             string arguments,
                             out string output,
                             out string[] errors,
                             out string[] warnings,
                             string jvmarg)
         {
-            Compile(projectPath, configChanged, arguments, out output, out errors, out warnings, jvmarg, "java.exe" /*or JvmConfigHelper.GetJavaEXE( null )*/ );
+            Compile(projectPath, arguments, out output, out errors, out warnings, jvmarg, "java.exe" /*or JvmConfigHelper.GetJavaEXE( null )*/ );
         }
 
         public void Compile(string projectPath,
-                            bool configChanged,
                             string arguments,
                             out string output,
                             out string[] errors,
@@ -98,17 +88,17 @@ namespace ProjectManager.Helpers
                             string jvmarg,
                             string javaExe)
         {
-            StringBuilder o = new StringBuilder();
+            var sb = new StringBuilder();
 
             // shut down fcsh if our working path has changed
             if (projectPath != workingDir)
                 Cleanup();
 
             // start up fcsh if necessary
-            if (process == null || process.HasExited)
+            if (process is null || process.HasExited)
             {
-                o.AppendLine("Starting java as: " + javaExe + " " + jvmarg);
-                o.AppendLine("INITIALIZING: " + Initialize(jvmarg, projectPath, javaExe));
+                sb.AppendLine("Starting java as: " + javaExe + " " + jvmarg);
+                sb.AppendLine("INITIALIZING: " + Initialize(jvmarg, projectPath, javaExe));
             }
             else
             {
@@ -117,9 +107,9 @@ namespace ProjectManager.Helpers
             }
 
             // success?
-            if (process == null)
+            if (process is null)
             {
-                output = o.ToString();
+                output = sb.ToString();
                 errorList.Add("Could not compile because the fcsh process could not be started.");
                 errors = errorList.ToArray();
                 warnings = warningList.ToArray();
@@ -128,10 +118,8 @@ namespace ProjectManager.Helpers
 
             if (arguments != lastArguments)
             {
-                if (lastCompileID != 0)
-                    ClearOldCompile();
-
-                o.AppendLine("Starting new compile.");
+                if (lastCompileID != 0) ClearOldCompile();
+                sb.AppendLine("Starting new compile.");
                 process.StandardInput.WriteLine("mxmlc " + arguments);
 
                 // remember this for next time
@@ -141,23 +129,23 @@ namespace ProjectManager.Helpers
             else
             {
                 // incrementally build the last compiled ID
-                o.AppendLine("Incremental compile of " + lastCompileID);
+                sb.AppendLine("Incremental compile of " + lastCompileID);
                 process.StandardInput.WriteLine("compile " + lastCompileID);
             }
 
-            o.Append(ReadUntilPrompt());
+            sb.Append(ReadUntilPrompt());
 
             // this is hacky.  allow some time for errors to accumulate in our separate thread.
             do { foundErrors = false; Thread.Sleep(100); }
             while (foundErrors);
 
-            output = o.ToString();
+            output = sb.ToString();
             if (Regex.IsMatch(output, "fcsh: Target " + lastCompileID + " not found"))
             {
                 // force a fresh compile
                 lastCompileID = 0;
                 lastArguments = null;
-                Compile(projectPath, true, arguments, out output, out errors, out warnings, jvmarg, javaExe);
+                Compile(projectPath, arguments, out output, out errors, out warnings, jvmarg, javaExe);
                 return;
             }
 
@@ -183,33 +171,33 @@ namespace ProjectManager.Helpers
             bool skipWarning = false;
             while (process != null && !process.StandardError.EndOfStream)
             {
-                string line = process.StandardError.ReadLine().TrimEnd();
+                var line = process.StandardError.ReadLine().TrimEnd();
                 lock (errorList)
-                lock (warningList)
-                {
-                    if (line.Length > 0)
+                    lock (warningList)
                     {
-                        if (skipWarning)
+                        if (line.Length > 0)
                         {
-                            if (line.Contains("Warning") || line.Contains("Error")) skipWarning = false;
+                            if (skipWarning)
+                            {
+                                if (line.Contains("Warning") || line.Contains("Error")) skipWarning = false;
+                                else
+                                {
+                                    if (line.Contains("^")) skipWarning = false;
+                                    continue;
+                                }
+                            }
+                            if (line.Contains("Warning:"))
+                            {
+                                warningList.Add(line);
+                                if (reWarning.IsMatch(line)) skipWarning = true;
+                            }
                             else
                             {
-                                if (line.Contains("^")) skipWarning = false;
-                                continue;
+                                errorList.Add(line);
+                                foundErrors = true;
                             }
                         }
-                        if (line.Contains("Warning:"))
-                        {
-                            warningList.Add(line);
-                            if (reWarning.IsMatch(line)) skipWarning = true;
-                        }
-                        else
-                        {
-                            errorList.Add(line);
-                            foundErrors = true;
-                        }
                     }
-                }
             }
         }
 
@@ -232,62 +220,54 @@ namespace ProjectManager.Helpers
         /// Read the compile id fsch returns
         /// </summary>
         /// <returns></returns>
-        private int ReadCompileID()
+        static int ReadCompileID()
         {
-            string line = "";
+            string line;
             lock (typeof(FlexCompilerShell))
                 line = process.StandardOutput.ReadLine();
 
-            if (line == null)
+            if (line is null)
                 return 0;
 
             // loop through all lines, regex matching phrase
-            Match m = Regex.Match(line, "Assigned ([0-9]+) as the compile target id");
+            var m = Regex.Match(line, "Assigned ([0-9]+) as the compile target id");
             while (!m.Success)
             {
                 lock (typeof(FlexCompilerShell))
                     line = process.StandardOutput.ReadLine();
 
-                if (line == null) return 0;
-                else m = Regex.Match(line, "Assigned ([0-9]+) as the compile target id");
+                if (line is null) return 0;
+                m = Regex.Match(line, "Assigned ([0-9]+) as the compile target id");
             }
 
             if (m.Groups.Count == 2) return int.Parse(m.Groups[1].Value);
-            else throw new Exception("Couldn't find the compile ID assigned by fcsh!");
+            throw new Exception("Couldn't find the compile ID assigned by fcsh!");
         }
 
         /// <summary>
         /// Read until fcsh is in idle state, displaying its (fcsh) prompt
         /// </summary>
         /// <returns></returns>
-        private string ReadUntilPrompt()
-        {
-            return ReadUntilToken("(fcsh)");
-        }
+        static string ReadUntilPrompt() => ReadUntilToken("(fcsh)");
 
-        private string ReadUntilToken(string token)
+        static string ReadUntilToken(string token)
         {
-            StringBuilder output = new StringBuilder();
-            Queue<char> queue = new Queue<char>();
-
+            var output = new StringBuilder();
+            var queue = new Queue<char>();
             lock (typeof(FlexCompilerShell))
             {
-                bool keepProcessing = true;
+                var keepProcessing = true;
                 while (keepProcessing)
                 {
                     if (process.HasExited)
                         keepProcessing = false;
                     else
                     {
-                        char c = (char)process.StandardOutput.Read();
+                        var c = (char)process.StandardOutput.Read();
                         output.Append(c);
-
                         queue.Enqueue(c);
-                        if (queue.Count > token.Length)
-                            queue.Dequeue();
-
-                        if (new string(queue.ToArray()).Equals(token))
-                            keepProcessing = false;
+                        if (queue.Count > token.Length) queue.Dequeue();
+                        if (new string(queue.ToArray()).Equals(token)) keepProcessing = false;
                     }
                 }
             }

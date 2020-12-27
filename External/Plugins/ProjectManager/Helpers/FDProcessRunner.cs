@@ -13,7 +13,7 @@ namespace ProjectManager.Helpers
     /// </summary>
     public class FDProcessRunner
     {
-        IMainForm mainForm;
+        readonly IMainForm mainForm;
 
         // some fudging to detect if a particular process was started by us and if so, what
         // name to associate with that process.
@@ -22,10 +22,7 @@ namespace ProjectManager.Helpers
         ProcessEndedHandler processEndedHandler;
         string savedDirectory; // to save the current directory before running processes
 
-        public FDProcessRunner(IMainForm mainForm)
-        {
-            this.mainForm = mainForm;
-        }
+        public FDProcessRunner(IMainForm mainForm) => this.mainForm = mainForm;
 
         public void StartProcess(string process, string arguments, string startupDirectory, ProcessEndedHandler callback)
         {
@@ -46,30 +43,20 @@ namespace ProjectManager.Helpers
         // which is spawned by MainForm
         public void ProcessStartedEventCaught()
         {
-            if (runningProcessNameRequest != null)
-            {
-                runningProcessName = runningProcessNameRequest;
-            }
+            if (runningProcessNameRequest != null) runningProcessName = runningProcessNameRequest;
         }
 
         public void ProcessEndedEventCaught(string result)
         {
             // test if this process was started by us - we are assuming that FD can
             // only run one process at a time.
-            if (runningProcessName != null)
-            {
-                bool success = result.EndsWithOrdinal("(0)");
-                if (processEndedHandler != null)
-                {
-                    processEndedHandler.DynamicInvoke(new object[] { success });
-                }
-                // restore current directory
-                Environment.CurrentDirectory = savedDirectory;
-                processEndedHandler = null;
-                runningProcessName = null;
-            }
+            if (runningProcessName is null) return;
+            var success = result.EndsWithOrdinal("(0)");
+            processEndedHandler?.DynamicInvoke(success);
+            // restore current directory
+            Environment.CurrentDirectory = savedDirectory;
+            processEndedHandler = null;
+            runningProcessName = null;
         }
-
     }
-
 }

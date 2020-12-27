@@ -5,18 +5,12 @@ namespace ProjectManager.Projects.AS2
 {
     public class AS2ProjectReader : ProjectReader
     {
-        AS2Project project;
+        readonly AS2Project project;
 
-        public AS2ProjectReader(string filename)
-            : base(filename, new AS2Project(filename))
-        {
-            this.project = base.Project as AS2Project;
-        }
+        public AS2ProjectReader(string filename) : base(filename, new AS2Project(filename))
+            => project = Project as AS2Project;
 
-        public new AS2Project ReadProject()
-        {
-            return base.ReadProject() as AS2Project;
-        }
+        public new AS2Project ReadProject() => base.ReadProject() as AS2Project;
 
         // process AS2-specific stuff
         protected override void ProcessNode(string name)
@@ -31,8 +25,7 @@ namespace ProjectManager.Projects.AS2
 
         public void ReadBuildOptions()
         {
-            List<string> includePackages = new List<string>();
-
+            var includePackages = new List<string>();
             ReadStartElement("build");
             while (Name == "option")
             {
@@ -74,10 +67,9 @@ namespace ProjectManager.Projects.AS2
                 string path = OSPath(GetAttribute("path"));
                 string mode = GetAttribute("mode");
 
-                if (path == null)
-                    throw new Exception("All library assets must have a 'path' attribute.");
+                if (path is null) throw new Exception("All library assets must have a 'path' attribute.");
 
-                LibraryAsset asset = new LibraryAsset(project, path);
+                var asset = new LibraryAsset(project, path);
                 project.LibraryAssets.Add(asset);
 
                 asset.ManualID = GetAttribute("id"); // could be null
@@ -91,7 +83,7 @@ namespace ProjectManager.Projects.AS2
                     asset.Sharepoint = GetAttribute("sharepoint"); // could be null
 
                 if (asset.IsImage && GetAttribute("bitmap") != null)
-                    asset.BitmapLinkage = Boolean.Parse(GetAttribute("bitmap"));
+                    asset.BitmapLinkage = bool.Parse(GetAttribute("bitmap"));
 
                 Read();
             }

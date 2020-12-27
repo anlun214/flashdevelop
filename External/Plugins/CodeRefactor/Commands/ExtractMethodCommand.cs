@@ -1,32 +1,27 @@
 using ASCompletion.Completion;
 using PluginCore;
-using ScintillaNet;
 
 namespace CodeRefactor.Commands
 {
     public class ExtractMethodCommand
     {
-        private readonly string NewName;
+        readonly string NewName;
 
-        public ExtractMethodCommand(string newName)
-        {
-            this.NewName = newName;
-        }
+        public ExtractMethodCommand(string newName) => NewName = newName;
 
         public void Execute()
         {
-            ScintillaControl Sci = PluginBase.MainForm.CurrentDocument.SciControl;
-            Sci.BeginUndoAction();
+            var sci = PluginBase.MainForm.CurrentDocument?.SciControl;
+            if (sci is null) return;
+            sci.BeginUndoAction();
             try
             {
-                ASGenerator.GenerateExtractMethod(Sci, NewName);
+                ASGenerator.GenerateExtractMethod(sci, NewName);
             }
             finally
             {
-                Sci.EndUndoAction();
+                sci.EndUndoAction();
             }
         }
-
     }
-
 }

@@ -5,7 +5,7 @@ using PluginCore.Localization;
 
 namespace CodeRefactor.BatchProcessors
 {
-    class ConsistentEOLProcessor : IBatchProcessor
+    internal class ConsistentEOLProcessor : IBatchProcessor
     {
         public bool IsAvailable => true;
 
@@ -15,15 +15,12 @@ namespace CodeRefactor.BatchProcessors
         {
             foreach (var file in files)
             {
-                var document = PluginBase.MainForm.OpenEditableDocument(file) as ITabbedDocument;
-                document.SciControl.ConvertEOLs(document.SciControl.EOLMode);
+                var document = (ITabbedDocument) PluginBase.MainForm.OpenEditableDocument(file);
+                var sci = document?.SciControl;
+                sci?.ConvertEOLs(sci.EOLMode);
             }
         }
 
-        public void ProcessProject(IProject project)
-        {
-            var files = BatchProcessManager.GetAllProjectFiles(project);
-            Process(files);
-        }
+        public void ProcessProject(IProject project) => Process(BatchProcessManager.GetAllProjectFiles(project));
     }
 }

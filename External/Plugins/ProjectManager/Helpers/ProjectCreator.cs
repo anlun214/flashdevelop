@@ -23,7 +23,7 @@ namespace ProjectManager.Helpers
     /// </summary>
     public class ProjectCreator
     {
-        private static Regex reArgs = new Regex("\\$\\(([a-z$]+)\\)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+        static readonly Regex reArgs = new Regex("\\$\\(([a-z$]+)\\)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
         string projectName;
         string projectId;
         string packageName;
@@ -33,32 +33,33 @@ namespace ProjectManager.Helpers
         string defaultFlexSDK;
         Argument[] arguments;
 
-        private static Hashtable projectTypes = new Hashtable();
-        private static List<String> projectExt = new List<string>();
-        private static bool projectTypesSet = false;
+        static readonly Hashtable projectTypes = new Hashtable();
+        static readonly List<string> projectExt = new List<string>();
+        static bool projectTypesSet;
 
-        private static bool isRunning;
-        public static bool IsRunning { get { return isRunning; } }
+        public static bool IsRunning { get; private set; }
 
         /// <summary>
         /// Creates a new project based on the specified template directory.
         /// </summary>
         public Project CreateProject(string templateDirectory, string projectLocation, string projectName, string packageName)
         {
-            isRunning = true;
+            IsRunning = true;
             if (!projectTypesSet) SetInitialProjectHash();
             SetContext(projectName, packageName);
-            string projectTemplate = FindProjectTemplate(templateDirectory);
-            string projectPath = Path.Combine(projectLocation, projectName + Path.GetExtension(projectTemplate));
+            var projectTemplate = FindProjectTemplate(templateDirectory);
+            var projectPath = Path.Combine(projectLocation, projectName + Path.GetExtension(projectTemplate));
             projectPath = PathHelper.GetPhysicalPathName(projectPath);
             // notify & let a plugin handle project creation
-            Hashtable para = new Hashtable();
-            para["template"] = projectTemplate;
-            para["location"] = projectLocation;
-            para["project"] = projectPath;
-            para["id"] = projectId;
-            para["package"] = packageName;
-            DataEvent de = new DataEvent(EventType.Command, ProjectManagerEvents.CreateProject, para);
+            var para = new Hashtable
+            {
+                ["template"] = projectTemplate,
+                ["location"] = projectLocation,
+                ["project"] = projectPath,
+                ["id"] = projectId,
+                ["package"] = packageName
+            };
+            var de = new DataEvent(EventType.Command, ProjectManagerEvents.CreateProject, para);
             EventManager.DispatchEvent(this, de);
             if (!de.Handled)
             {
@@ -67,38 +68,34 @@ namespace ProjectManager.Helpers
                 CopyFile(projectTemplate, projectPath);
                 CopyProjectFiles(templateDirectory, projectLocation, true);
             }
-            isRunning = false;
-            if (File.Exists(projectPath))
+            IsRunning = false;
+            if (!File.Exists(projectPath)) return null;
+            projectPath = PathHelper.GetPhysicalPathName(projectPath);
+            de = new DataEvent(EventType.Command, ProjectManagerEvents.ProjectCreated, para);
+            EventManager.DispatchEvent(this, de);
+            try
             {
-                projectPath = PathHelper.GetPhysicalPathName(projectPath);
-                de = new DataEvent(EventType.Command, ProjectManagerEvents.ProjectCreated, para);
-                EventManager.DispatchEvent(this, de);
-                try
-                {
-                    return ProjectLoader.Load(projectPath);
-                }
-                catch (Exception ex)
-                {
-                    TraceManager.Add(ex.Message);
-                    return null;
-                }
+                return ProjectLoader.Load(projectPath);
             }
-            else return null;
+            catch (Exception ex)
+            {
+                TraceManager.Add(ex.Message);
+                return null;
+            }
         }
 
         public static string FindProjectTemplate(string templateDirectory)
         {
-            string path = "";
             if (!projectTypesSet) SetInitialProjectHash();
             foreach (string key in projectTypes.Keys)
             {
-                path = Path.Combine(templateDirectory, key);
+                var path = Path.Combine(templateDirectory, key);
                 if (File.Exists(path)) return path;
             }
             return null;
         }
 
-        private void CopyProjectFiles(string sourceDir, string destDir, bool filter)
+        void CopyProjectFiles(string sourceDir, string destDir, bool filter)
         {
             Directory.CreateDirectory(destDir);
 
@@ -113,18 +110,14 @@ namespace ProjectManager.Helpers
                 CopyFile(file, destFile);
             }
 
-            List<string> excludedDirs = new List<string>(PluginMain.Settings.ExcludedDirectories);
-
-            foreach (string dir in Directory.GetDirectories(sourceDir))
+            var excludedDirs = new List<string>(PluginMain.Settings.ExcludedDirectories);
+            foreach (var dir in Directory.GetDirectories(sourceDir))
             {
-                string dirName = Path.GetFileName(dir);
+                var dirName = Path.GetFileName(dir);
                 dirName = ReplaceKeywords(dirName);
-                string destSubDir = Path.Combine(destDir, dirName);
-
+                var destSubDir = Path.Combine(destDir, dirName);
                 // don't copy like .svn and stuff
-                if (excludedDirs.Contains(dirName.ToLower()))
-                    continue;
-
+                if (excludedDirs.Contains(dirName.ToLower())) continue;
                 CopyProjectFiles(dir, destSubDir, false); // only filter the top directory
             }
         }
@@ -133,65 +126,58 @@ namespace ProjectManager.Helpers
         internal void CopyFile(string source, string dest)
         {
             dest = ReplaceKeywords(dest); // you can use keywords in filenames too
-            string ext = Path.GetExtension(source).ToLower();
-            if (FileInspector.IsProject(source, ext) || FileInspector.IsTemplate(source, ext))
+            var ext = Path.GetExtension(source).ToLower();
+            if (FileInspector.IsProject(source, ext) || FileInspector.IsTemplate(ext))
             {
-                if (FileInspector.IsTemplate(source, ext)) dest = dest.Substring(0, dest.LastIndexOf('.'));
-
-                Boolean saveBOM = PluginBase.MainForm.Settings.SaveUnicodeWithBOM;
-                Encoding encoding = Encoding.GetEncoding((Int32)PluginBase.MainForm.Settings.DefaultCodePage);
+                if (FileInspector.IsTemplate(ext)) dest = dest.Substring(0, dest.LastIndexOf('.'));
+                var saveBOM = PluginBase.Settings.SaveUnicodeWithBOM;
+                var encoding = Encoding.GetEncoding((int)PluginBase.Settings.DefaultCodePage);
                 // batch files must be encoded in ASCII
                 ext = Path.GetExtension(dest).ToLower();
                 if (ext == ".bat" || ext == ".cmd" || ext.StartsWithOrdinal(".php")) encoding = Encoding.ASCII;
-
-                string src = File.ReadAllText(source);
+                var src = File.ReadAllText(source);
                 src = ReplaceKeywords(ProcessCodeStyleLineBreaks(src));
                 FileHelper.WriteFile(dest, src, encoding, saveBOM);
             }
             else File.Copy(source, dest);
         }
 
-        private string ReplaceKeywords(string line)
+        string ReplaceKeywords(string line)
         {
             if (!line.Contains('$')) return line;
             if (packageName == "") line = line.Replace(" $(PackageName)", "");
             return reArgs.Replace(line, ReplaceVars);
         }
 
-        private string ReplaceVars(Match match)
+        string ReplaceVars(Match match)
         {
-            if (match.Groups.Count > 0)
+            if (match.Groups.Count == 0) return match.Value;
+            var name = match.Groups[1].Value.ToUpper(CultureInfo.InvariantCulture);
+            switch (name)
             {
-                string name = match.Groups[1].Value.ToUpper(CultureInfo.InvariantCulture);
-                switch (name)
-                {
-                    case "CBI": return PluginBase.Settings.CommentBlockStyle == CommentBlockStyle.Indented ? " " : "";
-                    case "QUOTE": return "\"";
-                    case "CLIPBOARD": return GetClipboard();
-                    case "TIMESTAMP": return DateTime.Now.ToString("g");
-                    case "PROJECTNAME": return projectName;
-                    case "PROJECTNAMELOWER": return projectName.ToLower();
-                    case "PROJECTID": return projectId;
-                    case "PROJECTIDLOWER": return projectId.ToLower();
-                    case "PACKAGENAME": return packageName;
-                    case "PACKAGENAMELOWER": return packageName.ToLower();
-                    case "PACKAGEPATH": return packagePath;
-                    case "PACKAGEPATHALT": return packagePath.Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                    case "PACKAGEDOT": return packageDot;
-                    case "PACKAGESLASH": return packageSlash;
-                    case "PACKAGESLASHALT": return packageSlash.Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                    case "DOLLAR": return "$";
-                    case "FLEXSDK":
-                        if (defaultFlexSDK == null)
-                            defaultFlexSDK = PathHelper.ResolvePath(PluginBase.MainForm.ProcessArgString("$(FlexSDK)")) ?? "C:\\flex_sdk";
-                        return defaultFlexSDK;
-                    case "APPDIR": return PathHelper.AppDir;
-                    default:
-                        if (arguments == null) arguments = PluginBase.MainForm.CustomArguments.ToArray();
-                        foreach (Argument arg in arguments)
-                            if (arg.Key.ToUpper() == name) return arg.Value;
-                        break;
-                }
+                case "CBI": return PluginBase.Settings.CommentBlockStyle == CommentBlockStyle.Indented ? " " : "";
+                case "QUOTE": return "\"";
+                case "CLIPBOARD": return GetClipboard();
+                case "TIMESTAMP": return DateTime.Now.ToString("g");
+                case "PROJECTNAME": return projectName;
+                case "PROJECTNAMELOWER": return projectName.ToLower();
+                case "PROJECTID": return projectId;
+                case "PROJECTIDLOWER": return projectId.ToLower();
+                case "PACKAGENAME": return packageName;
+                case "PACKAGENAMELOWER": return packageName.ToLower();
+                case "PACKAGEPATH": return packagePath;
+                case "PACKAGEPATHALT": return packagePath.Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                case "PACKAGEDOT": return packageDot;
+                case "PACKAGESLASH": return packageSlash;
+                case "PACKAGESLASHALT": return packageSlash.Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                case "DOLLAR": return "$";
+                case "FLEXSDK": return defaultFlexSDK ??= PathHelper.ResolvePath(PluginBase.MainForm.ProcessArgString("$(FlexSDK)")) ?? "C:\\flex_sdk";
+                case "APPDIR": return PathHelper.AppDir;
+                default:
+                    arguments ??= PluginBase.MainForm.CustomArguments.ToArray();
+                    foreach (var arg in arguments)
+                        if (arg.Key.ToUpper() == name) return arg.Value;
+                    break;
             }
             return match.Value;
         }
@@ -212,19 +198,14 @@ namespace ProjectManager.Helpers
         /// <summary>
         /// Gets the clipboard text
         /// </summary>
-        public static String GetClipboard()
-        {
-            IDataObject cbdata = Clipboard.GetDataObject();
-            if (cbdata.GetDataPresent("System.String", true))
-            {
-                return cbdata.GetData("System.String", true).ToString();
-            }
-            else return String.Empty;
-        }
+        public static string GetClipboard()
+            => Clipboard.GetDataObject() is {} data && data.GetDataPresent("System.String", true)
+                ? data.GetData("System.String", true).ToString()
+                : string.Empty;
 
-        private bool ShouldSkip(string path, bool isProjectRoot)
+        static bool ShouldSkip(string path, bool isProjectRoot)
         {
-            string filename = Path.GetFileName(path).ToLower();
+            var filename = Path.GetFileName(path).ToLower();
             if (isProjectRoot)
                 return projectTypes.ContainsKey(filename)
                     || filename == "project.txt"
@@ -232,7 +213,7 @@ namespace ProjectManager.Helpers
             return filename == "dummy";
         }
 
-        private static void SetInitialProjectHash()
+        static void SetInitialProjectHash()
         {
             projectTypes["project.fdproj"] = typeof(GenericProject);
             projectTypes["project.fdp"] = typeof(AS2Project);
@@ -271,33 +252,26 @@ namespace ProjectManager.Helpers
             return null;
         }
 
-        public static string KeyForProjectPath(string path)
-        {
-            return "project" + Path.GetExtension(path).ToLower();
-        }
+        public static string KeyForProjectPath(string path) => "project" + Path.GetExtension(path).ToLower();
 
         public static string GetProjectFilters()
-        {
-            string[] exts = projectExt.ToArray();
-            string filters = "FlashDevelop Projects|" + String.Join(";", exts)
-                + "|Adobe Flex Builder Project|.actionScriptProperties";
-            return filters;
-        }
+            => "FlashDevelop Projects|" + string.Join(";", projectExt) + "|Adobe Flex Builder Project|.actionScriptProperties";
 
         #region ArgsProcessor duplicated code
         /// <summary>
         /// Gets the correct coding style line break chars
         /// </summary>
-        public static String ProcessCodeStyleLineBreaks(String text)
+        public static string ProcessCodeStyleLineBreaks(string text)
         {
-            String CSLB = "$(CSLB)";
-            Int32 nextIndex = text.IndexOfOrdinal(CSLB);
-            if (nextIndex < 0) return text;
-            CodingStyle cs = PluginBase.Settings.CodingStyle;
-            if (cs == CodingStyle.BracesOnLine) return text.Replace(CSLB, "");
-            Int32 eolMode = (Int32)PluginBase.Settings.EOLMode;
-            String lineBreak = LineEndDetector.GetNewLineMarker(eolMode);
-            String result = ""; Int32 currentIndex = 0;
+            const string CSLB = "$(CSLB)";
+            var nextIndex = text.IndexOfOrdinal(CSLB);
+            if (nextIndex == -1) return text;
+            var cs = PluginBase.Settings.CodingStyle;
+            if (cs == CodingStyle.BracesOnLine) return text.Replace(CSLB, string.Empty);
+            var eolMode = (int)PluginBase.Settings.EOLMode;
+            var lineBreak = LineEndDetector.GetNewLineMarker(eolMode);
+            var result = string.Empty;
+            var currentIndex = 0;
             while (nextIndex >= 0)
             {
                 result += text.Substring(currentIndex, nextIndex - currentIndex) + lineBreak + GetLineIndentation(text, nextIndex);
@@ -308,19 +282,19 @@ namespace ProjectManager.Helpers
         }
 
         /// <summary>
-        /// Gets the line intendation from the text
+        /// Gets the line indentation from the text
         /// </summary>
-        private static String GetLineIndentation(String text, Int32 position)
+        static string GetLineIndentation(string text, int position)
         {
-            Char c;
-            Int32 startPos = position;
+            char c;
+            int startPos = position;
             while (startPos > 0)
             {
                 c = text[startPos];
                 if (c == 10 || c == 13) break;
                 startPos--;
             }
-            Int32 endPos = ++startPos;
+            int endPos = ++startPos;
             while (endPos < position)
             {
                 c = text[endPos];
